@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ISL Sign Training Data Recorder • Isolated Experiment</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #121826;
+      --border: #222e47;
+      --text: #f0f4fc;
+      --text-muted: #8c9cb8;
+      --accent: #00e5ff;
+      --accent-glow: rgba(0, 229, 255, 0.25);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --recording: #f43f5e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+    }
+
+    header {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .title-group h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .title-group p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .badge-isolated {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .main-grid {
+      width: 100%;
+      max-width: 1200px;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 1.5rem;
+    }
+
+    .video-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .video-viewport {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      pointer-events: none;
+    }
+
+    /* Active Recording Banner */
+    .active-class-banner {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      right: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 1rem;
+      background: rgba(18, 24, 38, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      z-index: 10;
+    }
+
+    .active-class-title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .active-class-name {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+    }
+
+    /* Countdown Overlay */
+    .countdown-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(3px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      display: none;
+    }
+
+    .countdown-number {
+      font-size: 7rem;
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 0 30px var(--accent);
+      animation: pulse 1s infinite alternate;
+    }
+
+    .countdown-hint {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-top: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    @keyframes pulse {
+      from { transform: scale(0.9); }
+      to { transform: scale(1.05); }
+    }
+
+    /* Recording Indicator Bar */
+    .recording-overlay {
+      position: absolute;
+      inset: 0;
+      border: 4px solid var(--recording);
+      box-shadow: inset 0 0 25px rgba(244, 63, 94, 0.4);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 1.5rem;
+      z-index: 20;
+      display: none;
+    }
+
+    .recording-hud {
+      background: rgba(18, 24, 38, 0.9);
+      border: 1px solid var(--recording);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .rec-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .rec-dot-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+      color: var(--recording);
+    }
+
+    .rec-dot {
+      width: 12px;
+      height: 12px;
+      background: var(--recording);
+      border-radius: 50%;
+      animation: blink 0.7s infinite alternate;
+    }
+
+    @keyframes blink {
+      from { opacity: 0.3; }
+      to { opacity: 1; }
+    }
+
+    .rec-progress-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .rec-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--recording);
+      transition: width 0.05s linear;
+    }
+
+    /* Video Card Footer / Controls */
+    .video-controls {
+      padding: 1.25rem;
+      display: flex;
+      gap: 1rem;
+      background: #0f1420;
+      align-items: center;
+    }
+
+    .btn-record {
+      flex: 1;
+      background: linear-gradient(135deg, #00e5ff 0%, #0088ff 100%);
+      color: #050b14;
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: 0.85rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      box-shadow: 0 4px 15px rgba(0, 229, 255, 0.3);
+      transition: all 0.15s ease;
+    }
+
+    .btn-record:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 229, 255, 0.45);
+    }
+
+    .btn-record:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-discard {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 0.85rem 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-discard:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .btn-discard:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Right Sidebar */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .panel-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Class Selection Buttons */
+    .class-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .class-btn {
+      width: 100%;
+      background: #0d121c;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.15s ease;
+    }
+
+    .class-btn:hover:not(.active) {
+      border-color: #384b6f;
+      background: #141b29;
+    }
+
+    .class-btn.active {
+      background: rgba(0, 229, 255, 0.1);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .class-btn.active .cls-label {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .cls-count-badge {
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      color: var(--text-muted);
+    }
+
+    .class-btn.active .cls-count-badge {
+      background: var(--accent);
+      color: #050b14;
+    }
+
+    /* Performance Guide Box */
+    .guide-box {
+      font-size: 0.85rem;
+      line-height: 1.45;
+      color: #c0cdf0;
+      background: #0a0f18;
+      border-left: 3px solid var(--accent);
+      padding: 0.75rem 0.9rem;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .guide-box strong {
+      color: #fff;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #10b981;
+      color: #fff;
+      padding: 0.75rem 1.5rem;
+      border-radius: 9999px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .toast.error {
+      background: #ef4444;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-group">
+      <h1>
+        <span>🎥</span>
+        ISL Sign Training Data Recorder
+      </h1>
+      <p>Isolated Landmark Collector for Temporal ML Model • Does not touch live app</p>
+    </div>
+    <div class="badge-isolated">
+      Isolated Environment
+    </div>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- Video & Canvas Viewport Card -->
+    <div class="video-card">
+      <div class="video-viewport">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="landmark-canvas"></canvas>
+
+        <!-- Active Class Banner -->
+        <div class="active-class-banner">
+          <div>
+            <div class="active-class-title">Current Selected Class:</div>
+            <div id="banner-class-name" class="active-class-name">WORK</div>
+          </div>
+          <div id="banner-progress" class="active-class-title">0 / 30 Samples</div>
+        </div>
+
+        <!-- 3-Second Countdown Overlay -->
+        <div id="countdown-overlay" class="countdown-overlay">
+          <div id="countdown-number" class="countdown-number">3</div>
+          <div id="countdown-hint" class="countdown-hint">Get Ready for WORK</div>
+        </div>
+
+        <!-- Recording Indicator Bar -->
+        <div id="recording-overlay" class="recording-overlay">
+          <div class="recording-hud">
+            <div class="rec-top-row">
+              <div class="rec-dot-group">
+                <div class="rec-dot"></div>
+                <span id="rec-status-text">RECORDING GESTURE...</span>
+              </div>
+              <span id="rec-frame-counter">Frame 0 / 40</span>
+            </div>
+            <div class="rec-progress-track">
+              <div id="rec-progress-fill" class="rec-progress-fill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="video-controls">
+        <button id="btn-record" class="btn-record" onclick="startRecordingFlow()">
+          <span>🔴</span>
+          <span>Record Sample (Spacebar)</span>
+        </button>
+        <button id="btn-discard" class="btn-discard" onclick="discardLastSample()">
+          <span>🗑️</span>
+          <span>Discard Last</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sidebar: Class Selection & Guide -->
+    <div class="sidebar">
+
+      <!-- Class Selector Panel -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>Select Target Class</span>
+          <span id="total-samples-stat" style="color: var(--accent);">Total: 0</span>
+        </div>
+        <div class="class-grid" id="class-buttons">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Movement Guide for Active Class -->
+      <div class="panel">
+        <div class="panel-title">Avatar Motion Reference</div>
+        <div id="movement-guide" class="guide-box">
+          Loading guide...
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div id="toast" class="toast">Sample saved successfully!</div>
+
+  <!-- MediaPipe Tasks Vision Library -->
+  <script type="module">
+    import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+
+    const CLASSES = ["COME", "HOME", "PLEASE", "WORK", "GO", "WHERE", "DEAF", "LIKE", "NEVER", "PERFECT", "HE", "NO_SIGN"];
+    const TARGETS = {
+      COME: 30,
+      HOME: 30,
+      PLEASE: 30,
+      WORK: 30,
+      GO: 30,
+      WHERE: 30,
+      DEAF: 30,
+      LIKE: 30,
+      NEVER: 30,
+      PERFECT: 30,
+      HE: 30,
+      NO_SIGN: 50
+    };
+
+    const GUIDES = {
+      WORK: "<strong>WORK (Avatar action):</strong><br>Perform a rhythmic vertical downward tapping motion with one hand (curled fist / tapping posture), or two hands tapping fists/wrists in front of torso. Repeat tap 2–3 times during recording.",
+      GO: "<strong>GO (Avatar action):</strong><br>Hold or push open flat palm forward facing the camera in front of your chest (fingers together pointing upward). Keep wrist steady.",
+      PLEASE: "<strong>PLEASE (Avatar action):</strong><br>Decisive index finger pointing forward/away in front of chest, OR two hands together in Prayer / Namaste hold at chest level.",
+      HOME: "<strong>HOME (Avatar action):</strong><br>Bring two hands together at the fingertips like a roof apex (/ \\) in front of chest with wrists spread wide. Hold steady.",
+      COME: "<strong>COME (Avatar action):</strong><br>Hold hand in front of chest and perform an inward beckoning curl stroke towards your chest/body.",
+      WHERE: "<strong>WHERE:</strong><br>Dual palms-up questioning shake.",
+      DEAF: "<strong>DEAF:</strong><br>Index finger moving from ear to mouth.",
+      LIKE: "<strong>LIKE:</strong><br>Chest touch affirmation of liking.",
+      NEVER: "<strong>NEVER:</strong><br>Two-handed outward denial wave.",
+      PERFECT: "<strong>PERFECT:</strong><br>Two-handed precision OK touch.",
+      HE: "<strong>HE:</strong><br>Third-person reference pointing sign.",
+      NO_SIGN: "<strong>NO_SIGN (Rejection class):</strong><br>Record varied realistic video call actions that must NOT trigger any sign:<br>• Waving hello/goodbye side-to-side<br>• Scratching chin, nose, face, or hair<br>• Fist held still or resting chin on palm<br>• Crossed arms without tapping<br>• OK sign, Peace / V sign, Thumbs up<br>• Typing / hands entering or leaving camera"
+    };
+
+    let activeClass = "WORK";
+    let counts = { COME: 0, HOME: 0, PLEASE: 0, WORK: 0, GO: 0, WHERE: 0, DEAF: 0, LIKE: 0, NEVER: 0, PERFECT: 0, HE: 0, NO_SIGN: 0 };
+    let handLandmarker = null;
+    let isModelReady = false;
+    let isRecording = false;
+    let isCountingDown = false;
+    let recordedFrames = [];
+    let recordStartTime = 0;
+    const RECORD_DURATION_MS = 1400; // ~1.4s (40-42 frames at 30fps)
+
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('landmark-canvas');
+    const ctx = canvas.getContext('2d');
+    const btnRecord = document.getElementById('btn-record');
+    const btnDiscard = document.getElementById('btn-discard');
+    const toastEl = document.getElementById('toast');
+
+    // Audio beep context for countdown
+    let audioCtx = null;
+    function playBeep(freq = 440, durationMs = 120) {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + durationMs / 1000);
+        osc.start();
+        osc.stop(audioCtx.currentTime + durationMs / 1000);
+      } catch (e) {}
+    }
+
+    // Fetch initial stats
+    async function fetchStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        if (data && data.counts) {
+          counts = data.counts;
+          renderClassButtons();
+          updateBanner();
+        }
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      }
+    }
+
+    function renderClassButtons() {
+      const container = document.getElementById('class-buttons');
+      container.innerHTML = '';
+      let total = 0;
+
+      CLASSES.forEach(cls => {
+        const count = counts[cls] || 0;
+        const target = TARGETS[cls] || 30;
+        total += count;
+
+        const btn = document.createElement('button');
+        btn.className = `class-btn ${cls === activeClass ? 'active' : ''}`;
+        btn.onclick = () => selectClass(cls);
+        btn.innerHTML = `
+          <span class="cls-label">${cls}</span>
+          <span class="cls-count-badge">${count} / ${target}</span>
+        `;
+        container.appendChild(btn);
+      });
+
+      document.getElementById('total-samples-stat').innerText = `Total: ${total}`;
+    }
+
+    function selectClass(cls) {
+      if (isRecording || isCountingDown) return;
+      activeClass = cls;
+      renderClassButtons();
+      updateBanner();
+      playBeep(520, 80);
+    }
+
+    function updateBanner() {
+      document.getElementById('banner-class-name').innerText = activeClass;
+      const count = counts[activeClass] || 0;
+      const target = TARGETS[activeClass] || 30;
+      document.getElementById('banner-progress').innerText = `${count} / ${target} Samples`;
+      document.getElementById('movement-guide').innerHTML = GUIDES[activeClass] || '';
+    }
+
+    function showToast(msg, isError = false) {
+      toastEl.innerText = msg;
+      toastEl.className = `toast show ${isError ? 'error' : ''}`;
+      setTimeout(() => {
+        toastEl.className = 'toast';
+      }, 2500);
+    }
+
+    // Initialize MediaPipe & Webcam
+    async function initPipeline() {
+      try {
+        let vision;
+        try {
+          vision = await FilesetResolver.forVisionTasks('/wasm');
+        } catch {
+          vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+        }
+
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: '/models/hand_landmarker.task',
+            delegate: 'GPU'
+          },
+          runningMode: 'VIDEO',
+          numHands: 2
+        });
+
+        isModelReady = true;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, frameRate: { ideal: 30 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play();
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          requestAnimationFrame(renderLoop);
+        };
+      } catch (err) {
+        console.error('Camera/MediaPipe error:', err);
+        showToast('Camera or MediaPipe initialization failed', true);
+      }
+    }
+
+    // HAND_CONNECTIONS for drawing
+    const CONNECTIONS = [
+      [0, 1], [1, 2], [2, 3], [3, 4],
+      [0, 5], [5, 6], [6, 7], [7, 8],
+      [5, 9], [9, 10], [10, 11], [11, 12],
+      [9, 13], [13, 14], [14, 15], [15, 16],
+      [13, 17], [17, 18], [18, 19], [19, 20],
+      [0, 17]
+    ];
+
+    let lastVideoTime = -1;
+
+    function renderLoop() {
+      if (video.readyState >= 2) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (handLandmarker && video.currentTime !== lastVideoTime) {
+          lastVideoTime = video.currentTime;
+          const detections = handLandmarker.detectForVideo(video, performance.now());
+
+          if (detections && detections.landmarks) {
+            // Draw skeleton
+            detections.landmarks.forEach((landmarks) => {
+              ctx.strokeStyle = isRecording ? '#f43f5e' : '#00e5ff';
+              ctx.lineWidth = 2.5;
+              CONNECTIONS.forEach(([i, j]) => {
+                const p1 = landmarks[i];
+                const p2 = landmarks[j];
+                ctx.beginPath();
+                ctx.moveTo(p1.x * canvas.width, p1.y * canvas.height);
+                ctx.lineTo(p2.x * canvas.width, p2.y * canvas.height);
+                ctx.stroke();
+              });
+
+              landmarks.forEach((p, idx) => {
+                const isTip = [4, 8, 12, 16, 20].includes(idx);
+                ctx.beginPath();
+                ctx.arc(p.x * canvas.width, p.y * canvas.height, isTip ? 5 : 3.5, 0, 2 * Math.PI);
+                ctx.fillStyle = isTip ? '#ffffff' : (isRecording ? '#fb7185' : '#38bdf8');
+                ctx.fill();
+              });
+            });
+
+            // If actively recording, store structured frame
+            if (isRecording) {
+              const frameRecord = packageFrame(detections.landmarks);
+              recordedFrames.push(frameRecord);
+
+              const elapsed = performance.now() - recordStartTime;
+              const progressPct = Math.min(100, (elapsed / RECORD_DURATION_MS) * 100);
+              document.getElementById('rec-progress-fill').style.width = `${progressPct}%`;
+              document.getElementById('rec-frame-counter').innerText = `Frame ${recordedFrames.length} (${Math.round(elapsed)}ms)`;
+
+              if (elapsed >= RECORD_DURATION_MS) {
+                stopAndSaveRecording();
+              }
+            }
+          }
+        }
+      }
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    // Package landmarks with 2 hands support and normalization
+    function packageFrame(multiLandmarks) {
+      // Sort hands left-to-right based on wrist.x
+      const sorted = [...multiLandmarks].sort((a, b) => a[0].x - b[0].x);
+
+      const handsData = [];
+      for (let h = 0; h < 2; h++) {
+        if (h < sorted.length) {
+          const lms = sorted[h];
+          const wrist = lms[0];
+          const raw = lms.map(p => ({ x: p.x, y: p.y, z: p.z }));
+
+          // Centered relative to wrist
+          const centered = lms.map(p => ({
+            x: p.x - wrist.x,
+            y: p.y - wrist.y,
+            z: p.z - wrist.z
+          }));
+
+          handsData.push({
+            isPresent: true,
+            wrist: { x: wrist.x, y: wrist.y, z: wrist.z },
+            rawLandmarks: raw,
+            centeredLandmarks: centered
+          });
+        } else {
+          // Empty hand padding
+          handsData.push({
+            isPresent: false,
+            wrist: { x: 0, y: 0, z: 0 },
+            rawLandmarks: new Array(21).fill({ x: 0, y: 0, z: 0 }),
+            centeredLandmarks: new Array(21).fill({ x: 0, y: 0, z: 0 })
+          });
+        }
+      }
+
+      return {
+        timestampMs: Math.round(performance.now() - recordStartTime),
+        handCount: multiLandmarks.length,
+        hands: handsData
+      };
+    }
+
+    // 3-2-1 Countdown Flow
+    window.startRecordingFlow = function() {
+      if (isRecording || isCountingDown || !isModelReady) return;
+
+      isCountingDown = true;
+      btnRecord.disabled = true;
+      btnDiscard.disabled = true;
+
+      const overlay = document.getElementById('countdown-overlay');
+      const numEl = document.getElementById('countdown-number');
+      const hintEl = document.getElementById('countdown-hint');
+
+      hintEl.innerText = `Get Ready for ${activeClass}`;
+      overlay.style.display = 'flex';
+
+      let count = 3;
+      numEl.innerText = count;
+      playBeep(440, 100);
+
+      const interval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          numEl.innerText = count;
+          playBeep(440, 100);
+        } else {
+          clearInterval(interval);
+          overlay.style.display = 'none';
+          isCountingDown = false;
+          executeRecording();
+        }
+      }, 1000);
+    };
+
+    function executeRecording() {
+      isRecording = true;
+      recordedFrames = [];
+      recordStartTime = performance.now();
+      playBeep(880, 180); // high beep to start
+
+      document.getElementById('recording-overlay').style.display = 'flex';
+      document.getElementById('rec-status-text').innerText = `RECORDING: ${activeClass}`;
+      document.getElementById('rec-progress-fill').style.width = '0%';
+    }
+
+    async function stopAndSaveRecording() {
+      isRecording = false;
+      document.getElementById('recording-overlay').style.display = 'none';
+      playBeep(660, 150);
+
+      const payload = {
+        label: activeClass,
+        frames: recordedFrames,
+        durationMs: Math.round(performance.now() - recordStartTime)
+      };
+
+      try {
+        const res = await fetch('/api/save_sample', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (data.status === 'saved') {
+          counts = data.counts;
+          renderClassButtons();
+          updateBanner();
+          showToast(`✓ Sample #${data.classCount} saved for ${activeClass}!`);
+        } else {
+          showToast(data.error || 'Failed to save sample', true);
+        }
+      } catch (err) {
+        showToast('Network error saving sample', true);
+      } finally {
+        btnRecord.disabled = false;
+        btnDiscard.disabled = false;
+      }
+    }
+
+    window.discardLastSample = async function() {
+      if (isRecording || isCountingDown) return;
+      const count = counts[activeClass] || 0;
+      if (count === 0) {
+        showToast(`No samples to discard in ${activeClass}`, true);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/delete_last', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: activeClass })
+        });
+        const data = await res.json();
+        if (data.status === 'deleted') {
+          counts = data.counts;
+          renderClassButtons();
+          updateBanner();
+          showToast(`Discarded ${data.deletedFile} from ${activeClass}`);
+        }
+      } catch (err) {
+        showToast('Error discarding sample', true);
+      }
+    };
+
+    // Keyboard Shortcuts (Space to record, Delete to discard, 1-6 to select class)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        window.startRecordingFlow();
+      } else if (e.code === 'Delete' || e.code === 'Backspace') {
+        window.discardLastSample();
+      } else if (['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) {
+        const idx = parseInt(e.code.replace('Digit', '')) - 1;
+        if (idx >= 0 && idx < CLASSES.length) {
+          selectClass(CLASSES[idx]);
+        }
+      }
+    });
+
+    // Run
+    fetchStats();
+    initPipeline();
+  </script>
+</body>
+</html>

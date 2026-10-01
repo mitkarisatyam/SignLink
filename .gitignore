@@ -1,0 +1,47 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node modules & build
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment
+.env
+.env.local
+.env.*
+venv/
+.venv/
+
+# Scratch and Backups
+scratch/
+BACKUP_*
+backup_*
+*.bak
+*.backup
+
+# Machine Learning & Python
+__pycache__/
+*.pyc
+*.pyo
+ml_experiment/checkpoints/
+ml_experiment/dataset/
+ml_experiment/reports/

@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time ML Sign Recognizer • Live Webcam Test</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #121826;
+      --border: #222e47;
+      --text: #f0f4fc;
+      --text-muted: #8c9cb8;
+      --accent: #00e5ff;
+      --accent-glow: rgba(0, 229, 255, 0.25);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --rejected: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+    }
+
+    header {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .title-group h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .title-group p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .nav-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .nav-link:hover {
+      background: rgba(0, 229, 255, 0.15);
+    }
+
+    .main-grid {
+      width: 100%;
+      max-width: 1200px;
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 1.5rem;
+    }
+
+    .video-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .video-viewport {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      pointer-events: none;
+    }
+
+    /* Live Recognition HUD */
+    .hud-overlay {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      right: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 1.25rem;
+      background: rgba(18, 24, 38, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      z-index: 10;
+    }
+
+    .hud-word-box {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .hud-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .hud-word {
+      font-size: 1.75rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      transition: color 0.15s ease;
+    }
+
+    .hud-word.accepted {
+      color: #00e5ff;
+      text-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+    }
+
+    .hud-word.rejected {
+      color: #64748b;
+    }
+
+    .hud-status-badge {
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .hud-status-badge.accepted {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .hud-status-badge.rejected {
+      background: rgba(100, 116, 139, 0.15);
+      color: var(--rejected);
+      border: 1px solid rgba(100, 116, 139, 0.3);
+    }
+
+    /* Right Sidebar */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .panel-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Class Probability Bars */
+    .prob-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .prob-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .prob-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .prob-bar-track {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .prob-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: #38bdf8;
+      border-radius: 4px;
+      transition: width 0.1s linear, background-color 0.15s ease;
+    }
+
+    .prob-bar-fill.active-sign {
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .prob-bar-fill.active-reject {
+      background: #64748b;
+    }
+
+    .stats-card {
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+    }
+
+    .stats-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.35rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .stats-val {
+      font-weight: 700;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-group">
+      <h1>
+        <span>⚡</span>
+        Real-Time ML Sign Recognizer (PyTorch GRU)
+      </h1>
+      <p>Live Streaming Webcam Inference • Evaluates Temporal Model Checkpoint</p>
+    </div>
+    <div class="nav-links">
+      <a href="/" class="nav-link">← Back to Dataset Recorder</a>
+    </div>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- Video & Canvas Viewport Card -->
+    <div class="video-card">
+      <div class="video-viewport">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="landmark-canvas"></canvas>
+
+        <!-- Live Recognition HUD -->
+        <div class="hud-overlay">
+          <div class="hud-word-box">
+            <div class="hud-label">Model Classification:</div>
+            <div id="hud-word" class="hud-word rejected">NO_SIGN</div>
+          </div>
+          <div id="hud-badge" class="hud-status-badge rejected">REJECTED</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar: Real-Time Probabilities -->
+    <div class="sidebar">
+
+      <div class="panel">
+        <div class="panel-title">
+          <span>Softmax Probability</span>
+          <span id="latency-text" style="color: var(--accent);">Latency: ~2ms</span>
+        </div>
+        <div class="prob-list" id="prob-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Model Specifications</div>
+        <div class="stats-card">
+          <div class="stats-row">
+            <span>Model:</span>
+            <span class="stats-val">SignTemporalGRU (v2)</span>
+          </div>
+          <div class="stats-row">
+            <span>Architecture:</span>
+            <span class="stats-val">2-Layer GRU (hidden 64)</span>
+          </div>
+          <div class="stats-row">
+            <span>Input Dimension:</span>
+            <span class="stats-val">151 features × 20 frames</span>
+          </div>
+          <div class="stats-row">
+            <span>CV Accuracy (110 samples):</span>
+            <span class="stats-val" style="color: var(--success);">99.1%</span>
+          </div>
+          <div class="stats-row">
+            <span>NO_SIGN False Positive Rate:</span>
+            <span class="stats-val" style="color: var(--success);">0.0% (0 / 50)</span>
+          </div>
+          <div class="stats-row">
+            <span>Empirical Rejection Thresh:</span>
+            <span class="stats-val" id="thresh-val">70%</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+
+    const CLASSES = ["NO_SIGN", "COME", "GO", "HOME", "PLEASE", "WORK"];
+    const SLIDING_WINDOW_SIZE = 22;
+    const REJECTION_THRESHOLD = 0.70;
+
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('landmark-canvas');
+    const ctx = canvas.getContext('2d');
+    const hudWord = document.getElementById('hud-word');
+    const hudBadge = document.getElementById('hud-badge');
+    const latencyText = document.getElementById('latency-text');
+
+    let handLandmarker = null;
+    let isPipelineReady = false;
+    let frameHistory = [];
+    let isPredicting = false;
+    let lastInferenceTime = 0;
+
+    // Build probability list
+    const probContainer = document.getElementById('prob-list');
+    CLASSES.forEach(cls => {
+      const item = document.createElement('div');
+      item.className = 'prob-item';
+      item.id = `item-${cls}`;
+      item.innerHTML = `
+        <div class="prob-header">
+          <span>${cls}</span>
+          <span id="prob-pct-${cls}">0.0%</span>
+        </div>
+        <div class="prob-bar-track">
+          <div id="bar-${cls}" class="prob-bar-fill"></div>
+        </div>
+      `;
+      probContainer.appendChild(item);
+    });
+
+    // Initialize MediaPipe & Webcam
+    async function initPipeline() {
+      try {
+        let vision;
+        try {
+          vision = await FilesetResolver.forVisionTasks('/wasm');
+        } catch {
+          vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+        }
+
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: '/models/hand_landmarker.task',
+            delegate: 'GPU'
+          },
+          runningMode: 'VIDEO',
+          numHands: 2
+        });
+
+        isPipelineReady = true;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, frameRate: { ideal: 30 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play();
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          requestAnimationFrame(renderLoop);
+        };
+      } catch (err) {
+        console.error('Camera/MediaPipe error:', err);
+      }
+    }
+
+    const CONNECTIONS = [
+      [0, 1], [1, 2], [2, 3], [3, 4],
+      [0, 5], [5, 6], [6, 7], [7, 8],
+      [5, 9], [9, 10], [10, 11], [11, 12],
+      [9, 13], [13, 14], [14, 15], [15, 16],
+      [13, 17], [17, 18], [18, 19], [19, 20],
+      [0, 17]
+    ];
+
+    let lastVideoTime = -1;
+
+    function renderLoop() {
+      if (video.readyState >= 2) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (handLandmarker && video.currentTime !== lastVideoTime) {
+          lastVideoTime = video.currentTime;
+          const detections = handLandmarker.detectForVideo(video, performance.now());
+
+          if (detections && detections.landmarks) {
+            // Draw skeleton
+            detections.landmarks.forEach((landmarks) => {
+              ctx.strokeStyle = '#00e5ff';
+              ctx.lineWidth = 2.5;
+              CONNECTIONS.forEach(([i, j]) => {
+                const p1 = landmarks[i];
+                const p2 = landmarks[j];
+                ctx.beginPath();
+                ctx.moveTo(p1.x * canvas.width, p1.y * canvas.height);
+                ctx.lineTo(p2.x * canvas.width, p2.y * canvas.height);
+                ctx.stroke();
+              });
+
+              landmarks.forEach((p, idx) => {
+                const isTip = [4, 8, 12, 16, 20].includes(idx);
+                ctx.beginPath();
+                ctx.arc(p.x * canvas.width, p.y * canvas.height, isTip ? 5 : 3.5, 0, 2 * Math.PI);
+                ctx.fillStyle = isTip ? '#ffffff' : '#38bdf8';
+                ctx.fill();
+              });
+            });
+
+            // Push into sliding window
+            const frameRecord = packageFrame(detections.landmarks);
+            frameHistory.push(frameRecord);
+            if (frameHistory.length > SLIDING_WINDOW_SIZE) {
+              frameHistory.shift();
+            }
+
+            // Run ML Inference every ~100ms when we have sufficient frames
+            const now = performance.now();
+            if (frameHistory.length >= 10 && !isPredicting && now - lastInferenceTime > 90) {
+              lastInferenceTime = now;
+              triggerInference();
+            }
+          }
+        }
+      }
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    function packageFrame(multiLandmarks) {
+      const sorted = [...multiLandmarks].sort((a, b) => a[0].x - b[0].x);
+      const handsData = [];
+      for (let h = 0; h < 2; h++) {
+        if (h < sorted.length) {
+          const lms = sorted[h];
+          const wrist = lms[0];
+          const raw = lms.map(p => ({ x: p.x, y: p.y, z: p.z }));
+          const centered = lms.map(p => ({
+            x: p.x - wrist.x,
+            y: p.y - wrist.y,
+            z: p.z - wrist.z
+          }));
+          handsData.push({
+            isPresent: true,
+            wrist: { x: wrist.x, y: wrist.y, z: wrist.z },
+            rawLandmarks: raw,
+            centeredLandmarks: centered
+          });
+        } else {
+          handsData.push({
+            isPresent: false,
+            wrist: { x: 0, y: 0, z: 0 },
+            rawLandmarks: new Array(21).fill({ x: 0, y: 0, z: 0 }),
+            centeredLandmarks: new Array(21).fill({ x: 0, y: 0, z: 0 })
+          });
+        }
+      }
+      return {
+        timestampMs: performance.now(),
+        handCount: multiLandmarks.length,
+        hands: handsData
+      };
+    }
+
+    async function triggerInference() {
+      isPredicting = true;
+      const t0 = performance.now();
+      try {
+        const res = await fetch('/api/predict_realtime', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ frames: frameHistory })
+        });
+        const data = await res.json();
+        const latency = (performance.now() - t0).toFixed(1);
+        latencyText.innerText = `Latency: ${latency}ms`;
+
+        if (data.status === 'ok') {
+          updateUI(data);
+        }
+      } catch (err) {
+        console.error('Inference error:', err);
+      } finally {
+        isPredicting = false;
+      }
+    }
+
+    function updateUI(res) {
+      const word = res.predictedClass;
+      const conf = res.confidence;
+      const isRejected = res.isRejected;
+      const probs = res.probabilities || {};
+
+      if (!isRejected && word !== 'NO_SIGN') {
+        hudWord.innerText = word;
+        hudWord.className = 'hud-word accepted';
+        hudBadge.innerText = `RECOGNIZED (${conf.toFixed(0)}%)`;
+        hudBadge.className = 'hud-status-badge accepted';
+      } else {
+        hudWord.innerText = 'NO_SIGN';
+        hudWord.className = 'hud-word rejected';
+        hudBadge.innerText = 'REJECTED';
+        hudBadge.className = 'hud-status-badge rejected';
+      }
+
+      // Update probability bars
+      CLASSES.forEach(cls => {
+        const p = (probs[cls] || 0) * 100;
+        const pctEl = document.getElementById(`prob-pct-${cls}`);
+        const barEl = document.getElementById(`bar-${cls}`);
+        if (pctEl && barEl) {
+          pctEl.innerText = `${p.toFixed(1)}%`;
+          barEl.style.width = `${p}%`;
+          if (cls === word && !isRejected && word !== 'NO_SIGN') {
+            barEl.className = 'prob-bar-fill active-sign';
+          } else if (cls === 'NO_SIGN' && (isRejected || word === 'NO_SIGN')) {
+            barEl.className = 'prob-bar-fill active-reject';
+          } else {
+            barEl.className = 'prob-bar-fill';
+          }
+        }
+      });
+    }
+
+    initPipeline();
+  </script>
+</body>
+</html>
