@@ -76,6 +76,11 @@ export class SignalingService {
       console.log('[SIGNALING] Data connection established with', conn.peer);
       this.connections.set(conn.peer, conn);
 
+      // Prevent SDP collisions: Only the Guest announces joining
+      if (!this.isHost && this.wantsToJoin) {
+        this.send({ type: 'peer_joined', sender: this.peerId });
+      }
+
       // Flush any messages that were sent before the connection opened
       while (this.pendingMessages.length > 0) {
         const msg = this.pendingMessages.shift();
@@ -120,8 +125,12 @@ export class SignalingService {
   }
 
   join() {
-    // Notify peers in the room that this peer has joined
-    this.send({ type: 'peer_joined', sender: this.peerId });
+    this.wantsToJoin = true;
+    
+    // If the data connection is already open and we are the Guest, announce immediately
+    if (!this.isHost && this.connections.size > 0) {
+      this.send({ type: 'peer_joined', sender: this.peerId });
+    }
   }
 
   _handleIncoming(payload) {
