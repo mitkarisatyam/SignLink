@@ -12,7 +12,8 @@ import {
   Settings,
   Sliders,
   Grid,
-  Share2,
+  Maximize,
+  Minimize,
   Send,
   MessageSquare,
   X,
@@ -20,6 +21,9 @@ import {
   Moon,
   User
 } from 'lucide-react';
+import IslAvatarViewer from './IslAvatarViewer';
+import DeafVideoSignRecognizer from './DeafVideoSignRecognizer';
+import { matchAllSignsFromSpeech } from '../utils/speechDictionary';
 import { SignalingService } from '../utils/signalingService';
 import './VideoCallMode.css';
 
@@ -37,6 +41,93 @@ function generateRoomCode() {
   return `call-${num1}-${num2}`;
 }
 
+const DraggableWindow = ({ title, defaultRect, isVisible, onClose, children }) => {
+  const [rect, setRect] = React.useState(defaultRect);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const dragStart = React.useRef({ x: 0, y: 0, rectX: 0, rectY: 0 });
+
+  const handleMouseDown = (e) => {
+    if (e.target.closest('.drag-handle')) {
+      setIsDragging(true);
+      dragStart.current = { x: e.clientX, y: e.clientY, rectX: rect.x, rectY: rect.y };
+    }
+  };
+
+  React.useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+      setRect(prev => ({
+        ...prev,
+        x: Math.max(0, Math.min(window.innerWidth - prev.width, dragStart.current.rectX + (e.clientX - dragStart.current.x))),
+        y: Math.max(0, Math.min(window.innerHeight - prev.height, dragStart.current.rectY + (e.clientY - dragStart.current.y)))
+      }));
+    };
+    const handleMouseUp = () => setIsDragging(false);
+    
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  if (!isVisible) return null;
+
+  return (
+    <div style={{
+      position: 'absolute', left: rect.x, top: rect.y, width: rect.width, height: rect.height,
+      backgroundColor: 'rgba(20,20,30,0.85)', border: '1px solid rgba(255,255,255,0.2)',
+      borderRadius: '12px', overflow: 'hidden', zIndex: 50, display: 'flex', flexDirection: 'column',
+      backdropFilter: 'blur(10px)'
+    }}>
+      <div 
+        className="drag-handle" onMouseDown={handleMouseDown}
+        style={{ height: '30px', backgroundColor: 'rgba(0,0,0,0.5)', cursor: 'grab', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 10px', userSelect: 'none' }}
+      >
+        <span style={{ fontSize: '12px', color: 'white', fontWeight: 600 }}>{title}</span>
+        {onClose && (
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}>
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {children}
+      </div>
+      <div 
+        style={{ position: 'absolute', bottom: 0, right: 0, width: '15px', height: '15px', cursor: 'nwse-resize', zIndex: 60 }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          const startWidth = rect.width;
+          const startHeight = rect.height;
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const onMove = (moveEvt) => {
+            setRect(prev => ({ 
+              ...prev, 
+              width: Math.max(150, Math.min(window.innerWidth - prev.x, startWidth + (moveEvt.clientX - startX))), 
+              height: Math.max(150, Math.min(window.innerHeight - prev.y, startHeight + (moveEvt.clientY - startY))) 
+            }));
+          };
+          const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        }}
+      >
+        <svg viewBox="0 0 10 10" style={{position: 'absolute', right: 2, bottom: 2, width: 8, height: 8}}>
+          <polygon points="10,0 10,10 0,10" fill="rgba(255,255,255,0.5)" />
+        </svg>
+      </div>
+    </div>
+  );
+};
+
 export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dark', onToggleTheme }) {
   // Room & View state
   const [roomId, setRoomId] = useState(initialRoomId || '');
@@ -47,9 +138,21 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [pinnedParticipant, setPinnedParticipant] = useState('remote'); // 'remote' | 'local'
 
   // Modals & Panels
+  const [userRole, setUserRole] = useState(null); // 'hearing' | 'deaf'
+  const [showRemoteVideo, setShowRemoteVideo] = useState(true);
+  const [showLocalVideo, setShowLocalVideo] = useState(true);
+  const [showAvatar, setShowAvatar] = useState(true);
+  const [showSignText, setShowSignText] = useState(true);
+  const [remoteSignText, setRemoteSignText] = useState('');
+  const [remoteSpeechText, setRemoteSpeechText] = useState('');
+  const [liveSpeechText, setLiveSpeechText] = useState('');
+  
+  const isMountedRef = useRef(true);
+  const lastResultIndexRef = useRef(0);
+  const lastMatchesRef = useRef([]);
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(true);
   const [notificationToast, setNotificationToast] = useState(null);
 
   // Peer & WebRTC state
@@ -62,7 +165,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [camActive, setCamActive] = useState(true);
   const [remoteMicActive, setRemoteMicActive] = useState(true);
   const [remoteCamActive, setRemoteCamActive] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   // Settings preferences
   const [mirrorVideo, setMirrorVideo] = useState(true);
@@ -71,10 +174,6 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
   // Call timer
   const [callDuration, setCallDuration] = useState(0);
-
-  // Real Chat messages
-  const [messages, setMessages] = useState([]);
-  const [chatInput, setChatInput] = useState('');
 
   // Refs
   const localVideoRef = useRef(null);
@@ -86,12 +185,69 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const dataChannelRef = useRef(null);
   const iceCandidateQueueRef = useRef([]);
   const toastTimeoutRef = useRef(null);
-  const chatBottomRef = useRef(null);
 
-  // Auto-scroll chat to bottom
+  // Web Speech API for Hearing Person
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (userRole !== 'hearing') return;
+    
+    isMountedRef.current = true;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = navigator.language || 'en-US';
+
+    recognition.onresult = (event) => {
+      if (!isMountedRef.current) return;
+      const results = event.results;
+      const resultIndex = event.resultIndex !== undefined ? event.resultIndex : results.length - 1;
+      
+      if (resultIndex !== lastResultIndexRef.current) {
+        lastMatchesRef.current = [];
+        lastResultIndexRef.current = resultIndex;
+      }
+
+      const currentResult = results[resultIndex];
+      if (!currentResult) return;
+      
+      const transcript = currentResult[0].transcript.trim();
+      setLiveSpeechText(transcript);
+
+      const matches = matchAllSignsFromSpeech(transcript);
+      let divergeIndex = 0;
+      const prevMatches = lastMatchesRef.current;
+      while (divergeIndex < prevMatches.length && divergeIndex < matches.length && prevMatches[divergeIndex] === matches[divergeIndex]) {
+        divergeIndex++;
+      }
+      const newSigns = matches.slice(divergeIndex);
+      
+      if (newSigns.length > 0) {
+        const word = newSigns[newSigns.length - 1];
+        if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+          dataChannelRef.current.send(JSON.stringify({ type: 'speech', text: word }));
+        }
+      }
+      lastMatchesRef.current = matches;
+    };
+
+    recognition.onend = () => {
+      if (isMountedRef.current) {
+        try { recognition.start(); } catch (e) {}
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {}
+
+    return () => {
+      isMountedRef.current = false;
+      try { recognition.stop(); } catch (e) {}
+    };
+  }, [userRole]);
 
   // Duration Timer
   useEffect(() => {
@@ -136,7 +292,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     });
   };
 
-  // Setup WebRTC DataChannel for Real-Time Chat
+  // Setup WebRTC DataChannel for Signs/Speech
   const setupDataChannel = useCallback((channel) => {
     dataChannelRef.current = channel;
 
@@ -147,23 +303,23 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     channel.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.type === 'chat') {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-              sender: 'other',
-              author: payload.author || 'Remote',
-              text: payload.text,
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          ]);
+        if (payload.type === 'sign') {
+          setRemoteSignText(payload.word);
+          if (userRole === 'hearing' && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(payload.word);
+            utterance.rate = 0.9;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+          }
+        } else if (payload.type === 'speech') {
+          setRemoteSpeechText(payload.text);
         }
       } catch (err) {
         console.warn('[WEBRTC] DataChannel parse error:', err);
       }
     };
-  }, []);
+  }, [userRole]);
 
   // Initialize WebRTC Peer Connection
   const createPeerConnection = useCallback((targetPeerId) => {
@@ -446,47 +602,29 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     }
   };
 
-  // Toggle Screen Sharing
-  const toggleScreenShare = async () => {
-    if (isScreenSharing) {
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach((t) => t.stop());
-        screenStreamRef.current = null;
+  // Toggle Full Screen
+  // Sync local stream to local video element if it renders after stream is ready
+  useEffect(() => {
+    if (showLocalVideo && localVideoRef.current && localStreamRef.current) {
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
       }
-      if (localStreamRef.current && pcRef.current) {
-        const videoTrack = localStreamRef.current.getVideoTracks()[0];
-        const senders = pcRef.current.getSenders();
-        const sender = senders.find((s) => s.track && s.track.kind === 'video');
-        if (sender && videoTrack) {
-          sender.replaceTrack(videoTrack);
-        }
-      }
-      setIsScreenSharing(false);
-      showToast('Screen sharing stopped');
+    }
+  });
+
+  const toggleFullScreen = () => {
+    const stage = document.querySelector('.glass-stage-content');
+    if (!stage) return;
+
+    if (!document.fullscreenElement) {
+      stage.requestFullscreen().catch((err) => {
+        console.warn('[FULLSCREEN] Error:', err);
+      });
+      setIsFullScreen(true);
     } else {
-      try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true
-        });
-        screenStreamRef.current = screenStream;
-        const screenTrack = screenStream.getVideoTracks()[0];
-
-        if (pcRef.current) {
-          const senders = pcRef.current.getSenders();
-          const sender = senders.find((s) => s.track && s.track.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(screenTrack);
-          }
-        }
-
-        screenTrack.onended = () => {
-          toggleScreenShare();
-        };
-
-        setIsScreenSharing(true);
-        showToast('Screen sharing started');
-      } catch (err) {
-        console.warn('[SCREEN] Sharing cancelled or failed:', err);
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+        setIsFullScreen(false);
       }
     }
   };
@@ -504,34 +642,6 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     onBack();
   };
 
-  // Send Chat Message
-  const handleSendMessage = (e) => {
-    e?.preventDefault();
-    if (!chatInput.trim()) return;
-
-    const newMsg = {
-      id: 'msg_' + Date.now(),
-      sender: 'me',
-      author: 'You',
-      text: chatInput.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setMessages((prev) => [...prev, newMsg]);
-
-    // Send via Data Channel
-    if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-      dataChannelRef.current.send(
-        JSON.stringify({
-          type: 'chat',
-          text: chatInput.trim(),
-          author: 'Peer'
-        })
-      );
-    }
-
-    setChatInput('');
-  };
 
   // ----------------------------------------------------
   // RENDER: LOBBY SCREEN (Clean Modern Glass)
@@ -627,6 +737,65 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   }
 
   // ----------------------------------------------------
+  // RENDER: ROLE SELECTION SCREEN
+  // ----------------------------------------------------
+  if (!userRole) {
+    return (
+      <div className="glass-ambient-backdrop">
+        <div className="glass-lobby-shell" style={{ maxWidth: '600px' }}>
+          <header className="glass-lobby-header">
+            <button onClick={handleEndCall} className="glass-back-btn">
+              <ArrowLeft size={16} />
+              <span>Back</span>
+            </button>
+            <div className="glass-lobby-brand">
+              <div className="logo-badge">SL</div>
+              <span>SignLink</span>
+            </div>
+            <button 
+              className="theme-toggle-pill-btn" 
+              onClick={onToggleTheme} 
+              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} theme`}
+            >
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+              <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
+          </header>
+
+          <main className="glass-lobby-main">
+            <div className="glass-lobby-card">
+              <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>Select Your Role</h2>
+              <p className="glass-lobby-desc" style={{ textAlign: 'center', marginBottom: '30px' }}>
+                Please select your role before joining the call. The layout will adapt automatically.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <button
+                  className="glass-action-btn primary"
+                  style={{ height: '60px', fontSize: '18px', width: '100%', display: 'flex', justifyContent: 'center' }}
+                  onClick={() => setUserRole('hearing')}
+                >
+                  <Mic size={24} style={{ marginRight: '10px' }} />
+                  Normal / Hearing Person
+                </button>
+
+                <button
+                  className="glass-action-btn primary"
+                  style={{ height: '60px', fontSize: '18px', width: '100%', display: 'flex', justifyContent: 'center', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+                  onClick={() => setUserRole('deaf')}
+                >
+                  <MessageSquare size={24} style={{ marginRight: '10px' }} />
+                  Deaf / Hard-of-Hearing Person
+                </button>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // ----------------------------------------------------
   // RENDER: ACTIVE IN-CALL SCREEN (Clean & Focused)
   // ----------------------------------------------------
   return (
@@ -661,13 +830,6 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
               title="Participants"
             >
               <Users size={18} />
-            </button>
-            <button
-              className={`rail-icon-btn ${isChatOpen ? 'active-pill' : ''}`}
-              onClick={() => setIsChatOpen(!isChatOpen)}
-              title={isChatOpen ? 'Hide Chat' : 'Show Chat'}
-            >
-              <MessageSquare size={18} />
             </button>
           </div>
 
@@ -745,51 +907,112 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
               </div>
             </header>
 
-            {/* Video Stage Layout */}
-            <div className={`glass-stage-content ${layoutMode === 'grid' ? 'mode-grid' : 'mode-hero'}`}>
-              {/* Primary Video Card (Remote Participant) */}
-              <div 
-                className={`hero-video-card ${pinnedParticipant === 'remote' ? 'pinned' : ''}`}
-                onClick={() => setPinnedParticipant('remote')}
-              >
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className={`hero-video-element ${!remoteCamActive ? 'hidden' : ''}`}
-                />
+            {/* Layout Toggles (Show hidden windows) */}
+            <div style={{ position: 'absolute', top: 80, right: 20, zIndex: 100, display: 'flex', gap: '10px' }}>
+              {userRole === 'hearing' && (
+                <>
+                  {!showLocalVideo && <button className="glass-action-btn primary" onClick={() => setShowLocalVideo(true)}>Show Self</button>}
+                  {!showSignText && <button className="glass-action-btn primary" onClick={() => setShowSignText(true)}>Show Text</button>}
+                </>
+              )}
+              {userRole === 'deaf' && (
+                <>
+                  {!showLocalVideo && <button className="glass-action-btn primary" onClick={() => setShowLocalVideo(true)}>Show Self</button>}
+                  
+                </>
+              )}
+            </div>
 
-                {/* Placeholder when remote camera is off or waiting for peer */}
-                {(!remoteCamActive || connectionStatus !== 'connected') && (
-                  <div className="hero-placeholder-overlay">
-                    <div className="waiting-placeholder-box">
-                      <div className="waiting-avatar-circle">
-                        <User size={36} />
-                      </div>
-                      <h3>{connectionStatus === 'connected' ? 'Remote camera is off' : 'Waiting for participant'}</h3>
-                      {connectionStatus !== 'connected' && (
-                        <>
-                          <p>Share this room code with your partner:</p>
-                          <div className="room-copy-pill big" onClick={copyRoomLink}>
-                            <span>{roomId}</span>
-                            {copiedLink ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+            {/* Video Stage Layout */}
+            <div className="glass-stage-content" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#000' }}>
+              
+              {/* MAIN AREA (Depends on role) */}
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: userRole === 'deaf' ? 'flex' : 'block' }}>
+                {userRole === 'deaf' ? (
+                  <>
+                    <div style={{ flex: 1, position: 'relative', borderRight: '1px solid rgba(255,255,255,0.1)' }}>
+                      <video
+                        ref={remoteVideoRef}
+                        autoPlay
+                        playsInline
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                      
+                      {/* Placeholder when remote camera is off or waiting for peer */}
+                      {(!remoteCamActive || connectionStatus !== 'connected') && (
+                        <div className="hero-placeholder-overlay" style={{position: 'absolute', inset:0, zIndex: 11}}>
+                          <div className="waiting-placeholder-box">
+                            <div className="waiting-avatar-circle">
+                              <User size={36} />
+                            </div>
+                            <h3>{connectionStatus === 'connected' ? 'Remote camera is off' : 'Waiting for participant'}</h3>
+                            {connectionStatus !== 'connected' && (
+                              <>
+                                <p>Share this room code with your partner:</p>
+                                <div className="room-copy-pill big" onClick={copyRoomLink}>
+                                  <span>{roomId}</span>
+                                  {copiedLink ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                                </div>
+                              </>
+                            )}
                           </div>
-                        </>
+                        </div>
+                      )}
+
+                      {/* Top-Left Participant Name Badge */}
+                      <div className="hero-name-badge" style={{ position: 'absolute', top: 20, left: 20, zIndex: 12 }}>
+                        <span>{connectionStatus === 'connected' ? 'Remote Participant' : 'Waiting...'}</span>
+                        {!remoteMicActive && connectionStatus === 'connected' && (
+                          <MicOff size={13} color="#dc2626" />
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, position: 'relative', background: 'transparent' }}>
+                      <IslAvatarViewer activeSign={remoteSpeechText || 'HELLO'} />
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                    <video
+                      ref={remoteVideoRef}
+                      autoPlay
+                      playsInline
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    
+                    {/* Placeholder when remote camera is off or waiting for peer */}
+                    {(!remoteCamActive || connectionStatus !== 'connected') && (
+                      <div className="hero-placeholder-overlay" style={{position: 'absolute', inset:0, zIndex: 11}}>
+                        <div className="waiting-placeholder-box">
+                          <div className="waiting-avatar-circle">
+                            <User size={36} />
+                          </div>
+                          <h3>{connectionStatus === 'connected' ? 'Remote camera is off' : 'Waiting for participant'}</h3>
+                          {connectionStatus !== 'connected' && (
+                            <>
+                              <p>Share this room code with your partner:</p>
+                              <div className="room-copy-pill big" onClick={copyRoomLink}>
+                                <span>{roomId}</span>
+                                {copiedLink ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Top-Left Participant Name Badge */}
+                    <div className="hero-name-badge" style={{ position: 'absolute', top: 20, left: 20, zIndex: 12 }}>
+                      <span>{connectionStatus === 'connected' ? 'Remote Participant' : 'Waiting...'}</span>
+                      {!remoteMicActive && connectionStatus === 'connected' && (
+                        <MicOff size={13} color="#dc2626" />
                       )}
                     </div>
                   </div>
                 )}
 
-                {/* Top-Left Participant Name Badge */}
-                <div className="hero-name-badge">
-                  <span>{connectionStatus === 'connected' ? 'Remote Participant' : 'Waiting...'}</span>
-                  {!remoteMicActive && connectionStatus === 'connected' && (
-                    <MicOff size={13} color="#dc2626" />
-                  )}
-                </div>
-
                 {/* EXACT REFERENCE LEVEL GLASSMORPHIC CONTROL CAPSULE */}
-                <div className="floating-control-capsule">
+                <div className="floating-control-capsule" style={{ zIndex: 100 }}>
                   {/* Mic Toggle (Circular Glass Disc) */}
                   <button
                     className={`capsule-glass-circle ${!micActive ? 'disabled' : ''}`}
@@ -816,13 +1039,17 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                     )}
                   </button>
 
-                  {/* Screen Share (Circular Glass Disc) */}
+                  {/* Full Screen (Circular Glass Disc) */}
                   <button
-                    className={`capsule-glass-circle ${isScreenSharing ? 'active-share' : ''}`}
-                    onClick={toggleScreenShare}
-                    title={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
+                    className={`capsule-glass-circle ${isFullScreen ? 'active-share' : ''}`}
+                    onClick={toggleFullScreen}
+                    title={isFullScreen ? 'Exit full screen' : 'Full screen'}
                   >
-                    <Share2 size={18} strokeWidth={2.2} />
+                    {isFullScreen ? (
+                      <Minimize size={18} strokeWidth={2.2} />
+                    ) : (
+                      <Maximize size={18} strokeWidth={2.2} />
+                    )}
                   </button>
 
                   {/* End Call Button (Solid Crimson Red Disc) */}
@@ -836,94 +1063,72 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                 </div>
               </div>
 
-              {/* Local Participant Tile (Self-View) */}
-              <div 
-                className={`self-video-tile ${pinnedParticipant === 'local' ? 'pinned' : ''}`}
-                onClick={() => setPinnedParticipant(pinnedParticipant === 'local' ? 'remote' : 'local')}
-                title="Click to toggle focus"
-              >
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`sub-video-element ${mirrorVideo ? 'mirror' : ''} ${!camActive ? 'hidden' : ''}`}
-                />
-                {!camActive && (
-                  <div className="sub-placeholder-static">
-                    <User size={28} />
-                    <span>Camera off</span>
-                  </div>
-                )}
-                <div className="sub-name-overlay">
-                  <span>You</span>
-                  {!micActive && <MicOff size={12} color="#dc2626" />}
-                </div>
-              </div>
+              {/* HEARING LAYOUT FLOATING WINDOWS */}
+              {userRole === 'hearing' && (
+                <>
+
+
+                  <DraggableWindow 
+                    title="My Video" 
+                    defaultRect={{ x: window.innerWidth - 300, y: window.innerHeight - 200, width: 250, height: 180 }}
+                    isVisible={showLocalVideo}
+                    onClose={() => setShowLocalVideo(false)}
+                  >
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className={mirrorVideo ? 'mirror' : ''}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    {!camActive && (
+                      <div className="cam-off-overlay" style={{position: 'absolute', inset:0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000'}}>
+                        <User size={40} color="#64748b" />
+                      </div>
+                    )}
+                  </DraggableWindow>
+
+                  <DraggableWindow 
+                    title="Recognized Sign Text" 
+                    defaultRect={{ x: window.innerWidth - 320, y: 20, width: 300, height: 100 }}
+                    isVisible={showSignText}
+                    onClose={() => setShowSignText(false)}
+                  >
+                    <div style={{ padding: '20px', fontSize: '24px', color: 'white', textAlign: 'center', background: 'rgba(0,0,0,0.5)', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {remoteSignText || 'Waiting for sign...'}
+                    </div>
+                  </DraggableWindow>
+                </>
+              )}
+
+              {/* DEAF LAYOUT FLOATING WINDOWS */}
+              {userRole === 'deaf' && (
+                <>
+
+
+                  <DraggableWindow 
+                    title="My Video & Sign Recognition" 
+                    defaultRect={{ x: 20, y: window.innerHeight - 200, width: 250, height: 180 }}
+                    isVisible={showLocalVideo}
+                    onClose={() => setShowLocalVideo(false)}
+                  >
+                    <DeafVideoSignRecognizer 
+                      mediaStream={localStreamRef.current}
+                      hideControls={true}
+                      onSignRecognized={(word) => {
+                        if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+                          dataChannelRef.current.send(JSON.stringify({ type: 'sign', word }));
+                        }
+                      }}
+                      isCameraActive={camActive}
+                      ttsEnabled={false} // TTS happens on remote side
+                    />
+                  </DraggableWindow>
+                </>
+              )}
             </div>
           </section>
-
-          {/* 3. Right Sidebar: Real Chat Room */}
-          {isChatOpen && (
-            <aside className="glass-chat-sidebar">
-              <header className="chat-sidebar-header">
-                <h2>Chat</h2>
-                <button
-                  className="modal-close-btn"
-                  onClick={() => setIsChatOpen(false)}
-                  title="Close Chat"
-                >
-                  <X size={16} />
-                </button>
-              </header>
-
-              {/* Message Stream */}
-              <div className="chat-messages-container">
-                {messages.length === 0 ? (
-                  <div className="chat-empty-state">
-                    <MessageSquare size={28} />
-                    <p>No messages yet. Send a message to chat with your partner.</p>
-                  </div>
-                ) : (
-                  messages.map((msg) => {
-                    const isMe = msg.sender === 'me';
-                    return (
-                      <div key={msg.id} className={`chat-message-row ${isMe ? 'msg-me' : 'msg-other'}`}>
-                        <div className="msg-content-block">
-                          <span className="msg-sender-label">{msg.author}</span>
-                          <div className={`msg-bubble ${isMe ? 'bubble-blue' : 'bubble-slate'}`}>
-                            <p>{msg.text}</p>
-                          </div>
-                          <span className="msg-time">{msg.time}</span>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={chatBottomRef} />
-              </div>
-
-              {/* Bottom Input Capsule */}
-              <form className="chat-input-form" onSubmit={handleSendMessage}>
-                <div className="chat-input-capsule">
-                  <input
-                    type="text"
-                    placeholder="Type a message..."
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                  />
-                  <button
-                    type="submit"
-                    className="input-send-circle"
-                    disabled={!chatInput.trim()}
-                    title="Send message"
-                  >
-                    <Send size={15} color="#ffffff" />
-                  </button>
-                </div>
-              </form>
-            </aside>
-          )}
         </div>
       </div>
 

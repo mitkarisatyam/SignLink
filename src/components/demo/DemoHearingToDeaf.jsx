@@ -56,7 +56,7 @@ export default function DemoHearingToDeaf({ onBack }) {
   const lastTriggeredWordRef = useRef('');
   const lastRecognizedTimeRef = useRef(0);
   const signQueueRef = useRef([]);
-  const processedSignsCountRef = useRef(0);
+  const lastMatchesRef = useRef([]);
   const lastResultIndexRef = useRef(0);
   const lastModalTimeRef = useRef(0);
 
@@ -216,7 +216,7 @@ export default function DemoHearingToDeaf({ onBack }) {
       const resultIndex = event.resultIndex !== undefined ? event.resultIndex : results.length - 1;
       
       if (resultIndex !== lastResultIndexRef.current) {
-        processedSignsCountRef.current = 0;
+        lastMatchesRef.current = [];
         lastResultIndexRef.current = resultIndex;
       }
 
@@ -244,25 +244,26 @@ export default function DemoHearingToDeaf({ onBack }) {
         }
       }
 
-      // Slice off the signs we've already queued for this exact utterance
-      const newSigns = matchedSigns.slice(processedSignsCountRef.current);
+      let divergeIndex = 0;
+      const prevMatches = lastMatchesRef.current;
+      while (divergeIndex < prevMatches.length && divergeIndex < matchedSigns.length && prevMatches[divergeIndex] === matchedSigns[divergeIndex]) {
+        divergeIndex++;
+      }
+      const newSigns = matchedSigns.slice(divergeIndex);
 
-      // If matched, trigger signs sequentially
       if (newSigns.length > 0) {
-        processedSignsCountRef.current += newSigns.length;
         lastRecognizedTimeRef.current = Date.now();
-        setLiveSpeechText(matchedSigns.join(' ')); // show all matched signs
+        setLiveSpeechText(matchedSigns.join(' ')); 
 
         if (avatarRef.current && avatarRef.current.isCurrentlyPlaying && avatarRef.current.isCurrentlyPlaying()) {
-          // If already playing, append to the queue
           signQueueRef.current.push(...newSigns);
         } else {
-          // Play first immediately, queue the rest
           const first = newSigns.shift();
           signQueueRef.current = newSigns;
           handleTriggerWord(first);
         }
       }
+      lastMatchesRef.current = matchedSigns;
 
       // If NOT matched and speech is finalized (user paused/finished utterance)
       if (currentResult.isFinal) {
@@ -492,7 +493,7 @@ export default function DemoHearingToDeaf({ onBack }) {
             {/* Bottom Tile Info */}
             <div className="tile-bottom-badge avatar-badge">
               <Bot size={14} color="#1d72fe" />
-              <span>ISL 3D Robot Interpreter • Sanket Model</span>
+              <span>ISL 3D Robot Interpreter</span>
             </div>
           </div>
         </div>

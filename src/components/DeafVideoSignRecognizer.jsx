@@ -23,13 +23,7 @@ const HAND_CONNECTIONS = [
   [0, 17]                                  // Palm base
 ];
 
-export default function DeafVideoSignRecognizer({
-  onSignRecognized,
-  isCameraActive = true,
-  onCameraToggle,
-  ttsEnabled = true,
-  onTtsToggle
-}) {
+export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActive, ttsEnabled, mediaStream, hideControls = false, onCameraToggle, onTtsToggle }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -47,16 +41,9 @@ export default function DeafVideoSignRecognizer({
   const [handCount, setHandCount] = useState(0);
   const [gestureProgress, setGestureProgress] = useState(0);
   const [isGestureCharging, setIsGestureCharging] = useState(false);
-  const [engineMode, setEngineMode] = useState('ml'); // 'ml' (default) or 'heuristic' (fallback)
   const [isWordListExpanded, setIsWordListExpanded] = useState(false);
-
-  const toggleEngine = useCallback(() => {
-    const nextMode = engineMode === 'ml' ? 'heuristic' : 'ml';
-    setEngineMode(nextMode);
-    if (classifierRef.current) {
-      classifierRef.current.setEngine(nextMode);
-    }
-  }, [engineMode]);
+  const [engineMode, setEngineMode] = useState('ml');
+  const toggleEngine = () => setEngineMode(e => e === 'ml' ? 'heuristic' : 'ml');
 
   // Clear timer on unmount
   useEffect(() => {
@@ -202,9 +189,18 @@ export default function DeafVideoSignRecognizer({
   // Initialize Webcam Stream
   useEffect(() => {
     if (!cameraActive) {
-      if (streamRef.current) {
+      if (streamRef.current && !mediaStream) {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+      }
+      return;
+    }
+
+    if (mediaStream) {
+      streamRef.current = mediaStream;
+      if (videoRef.current && videoRef.current.srcObject !== mediaStream) {
+        videoRef.current.srcObject = mediaStream;
+        videoRef.current.play().catch(() => {});
       }
       return;
     }
@@ -237,12 +233,12 @@ export default function DeafVideoSignRecognizer({
 
     return () => {
       isSubscribed = false;
-      if (streamRef.current) {
+      if (streamRef.current && !mediaStream) {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
       }
     };
-  }, [cameraActive]);
+  }, [cameraActive, mediaStream]);
 
   // Main Detection Loop
   useEffect(() => {
@@ -343,16 +339,14 @@ export default function DeafVideoSignRecognizer({
         />
         <canvas ref={canvasRef} className="deaf-landmark-canvas" />
 
-        {/* Loading Overlay */}
-        {modelLoading && (
+        {!hideControls && modelLoading && (
           <div className="deaf-loading-scrim">
             <Sparkles size={24} className="spin-icon" color="#1d72fe" />
             <span>Loading MediaPipe AI Sign Recognizer...</span>
           </div>
         )}
 
-        {/* Live Detected Sign HUD with Completion Progress */}
-        {activeSign && (
+        {!hideControls && activeSign && (
           <div className={`deaf-active-sign-hud ${isGestureCharging ? 'charging' : 'confirmed'}`}>
             <div className="sign-hud-header">
               <Sparkles size={14} color={isGestureCharging ? '#93c5fd' : (engineMode === 'ml' ? '#1d72fe' : '#f59e0b')} />
@@ -376,85 +370,87 @@ export default function DeafVideoSignRecognizer({
           </div>
         )}
 
-        {/* Overlay Label & Hand Count */}
-        <div className="deaf-video-overlay-bottom">
-          <div className="deaf-participant-badge">
-            <span className="live-dot" />
-            <span>Deaf Participant (You) • {engineMode === 'ml' ? 'SignTemporalGRU v2' : 'Heuristic Fallback'}</span>
-          </div>
-          <div className="hand-counter-badge">
-            <Hand size={13} color="#1d72fe" />
-            <span>{handCount > 0 ? `${handCount} Hand${handCount > 1 ? 's' : ''} Tracked` : 'Show hands to camera'}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Recognition Toolbar & Fallback Manual Sign Trigger Bar */}
-      <div className="deaf-controls-strip">
-        <div className="available-words-container" style={{ position: 'relative' }}>
-          <button
-            className={`control-play-sign-btn ${activeSign ? 'playing' : ''}`}
-            onClick={() => setIsWordListExpanded(!isWordListExpanded)}
-            title="Show Available Signs"
-            style={{ minWidth: '180px', height: '36px', borderRadius: '18px', padding: '0 16px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}
-          >
-            <Sparkles size={16} />
-            <span>{activeSign ? `Simulating "${activeSign}"...` : `Available Words`}</span>
-          </button>
-          
-          {isWordListExpanded && (
-            <div className="available-words-dropdown" style={{ bottom: '100%', top: 'auto', marginBottom: '8px' }}>
-              <div className="dropdown-header">Select a word to simulate:</div>
-              <div className="dropdown-list">
-                {SUPPORTED_SIGNS.map((sign) => (
-                  <button
-                    key={sign.id}
-                    className="dropdown-item"
-                    onClick={() => {
-                      handleTriggerWord(sign.id, 98);
-                      setIsWordListExpanded(false);
-                    }}
-                  >
-                    {sign.label}
-                  </button>
-                ))}
-              </div>
+        {!hideControls && (
+          <div className="deaf-video-overlay-bottom">
+            <div className="deaf-participant-badge">
+              <span className="live-dot" />
+              <span>Deaf Participant (You) • {engineMode === 'ml' ? 'SignTemporalGRU v2' : 'Heuristic Fallback'}</span>
             </div>
-          )}
-        </div>
-
-        <div className="deaf-toggles">
-          <button
-            className={`deaf-toggle-icon-btn ${engineMode === 'ml' ? 'active' : ''}`}
-            onClick={toggleEngine}
-            title={engineMode === 'ml' ? 'Engine: SignTemporalGRU v2 (Click to switch to Heuristic Fallback)' : 'Engine: Heuristic Fallback (Click to switch to ML GRU v2)'}
-            style={{ width: 'auto', padding: '0 8px', gap: '5px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center' }}
-          >
-            <Cpu size={14} color={engineMode === 'ml' ? '#1d72fe' : '#f59e0b'} />
-            <span>{engineMode === 'ml' ? 'ML GRU v2' : 'Fallback'}</span>
-          </button>
-
-          <button
-            className={`deaf-toggle-icon-btn ${ttsEnabled ? 'active' : ''}`}
-            onClick={onTtsToggle}
-            title={ttsEnabled ? 'Mute Voice Output (TTS)' : 'Enable Voice Output (TTS)'}
-          >
-            {ttsEnabled ? <Volume2 size={16} color="#81c995" /> : <VolumeX size={16} color="#ea4335" />}
-          </button>
-
-          <button
-            className={`deaf-toggle-icon-btn ${cameraActive ? 'active' : ''}`}
-            onClick={() => {
-              const nextState = !cameraActive;
-              setCameraActive(nextState);
-              if (onCameraToggle) onCameraToggle(nextState);
-            }}
-            title={cameraActive ? 'Turn Off Webcam' : 'Turn On Webcam'}
-          >
-            {cameraActive ? <Camera size={16} color="#8ab4f8" /> : <CameraOff size={16} color="#ea4335" />}
-          </button>
-        </div>
+            <div className="hand-counter-badge">
+              <Hand size={13} color="#1d72fe" />
+              <span>{handCount > 0 ? `${handCount} Hand${handCount > 1 ? 's' : ''} Tracked` : 'Show hands to camera'}</span>
+            </div>
+          </div>
+        )}
       </div>
+
+      {!hideControls && (
+        <div className="deaf-controls-strip">
+          <div className="available-words-container" style={{ position: 'relative' }}>
+            <button
+              className={`control-play-sign-btn ${activeSign ? 'playing' : ''}`}
+              onClick={() => setIsWordListExpanded(!isWordListExpanded)}
+              title="Show Available Signs"
+              style={{ minWidth: '180px', height: '36px', borderRadius: '18px', padding: '0 16px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}
+            >
+              <Sparkles size={16} />
+              <span>{activeSign ? `Simulating "${activeSign}"...` : `Available Words`}</span>
+            </button>
+            
+            {isWordListExpanded && (
+              <div className="available-words-dropdown" style={{ bottom: '100%', top: 'auto', marginBottom: '8px' }}>
+                <div className="dropdown-header">Select a word to simulate:</div>
+                <div className="dropdown-list">
+                  {SUPPORTED_SIGNS.map((sign) => (
+                    <button
+                      key={sign.id}
+                      className="dropdown-item"
+                      onClick={() => {
+                        handleTriggerWord(sign.id, 98);
+                        setIsWordListExpanded(false);
+                      }}
+                    >
+                      {sign.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="deaf-toggles">
+            <button
+              className={`deaf-toggle-icon-btn ${engineMode === 'ml' ? 'active' : ''}`}
+              onClick={toggleEngine}
+              title={engineMode === 'ml' ? 'Engine: SignTemporalGRU v2 (Click to switch to Heuristic Fallback)' : 'Engine: Heuristic Fallback (Click to switch to ML GRU v2)'}
+              style={{ width: 'auto', padding: '0 8px', gap: '5px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center' }}
+            >
+              <Cpu size={14} color={engineMode === 'ml' ? '#1d72fe' : '#f59e0b'} />
+              <span>{engineMode === 'ml' ? 'ML GRU v2' : 'Fallback'}</span>
+            </button>
+
+            <button
+              className={`deaf-toggle-icon-btn ${ttsEnabled ? 'active' : ''}`}
+              onClick={onTtsToggle}
+              title={ttsEnabled ? 'Mute Voice Output (TTS)' : 'Enable Voice Output (TTS)'}
+            >
+              {ttsEnabled ? <Volume2 size={16} color="#81c995" /> : <VolumeX size={16} color="#ea4335" />}
+            </button>
+
+            <button
+              className={`deaf-toggle-icon-btn ${cameraActive ? 'active' : ''}`}
+              onClick={() => {
+                const nextState = !cameraActive;
+                setCameraActive(nextState);
+                if (onCameraToggle) onCameraToggle(nextState);
+              }}
+              title={cameraActive ? 'Turn Off Webcam' : 'Turn On Webcam'}
+            >
+              {cameraActive ? <Camera size={16} color="#8ab4f8" /> : <CameraOff size={16} color="#ea4335" />}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

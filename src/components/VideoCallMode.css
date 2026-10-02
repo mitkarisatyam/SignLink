@@ -564,6 +564,7 @@
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  position: relative;
 }
 
 /* Primary Hero Video Card */
@@ -717,34 +718,32 @@
   transform: scale(1.06);
 }
 
-/* Bottom Secondary Sub-Grid */
-.sub-video-grid {
-  height: 190px;
-  display: grid;
-  grid-template-columns: 1.25fr 1fr 1fr 0.9fr;
-  gap: 14px;
-}
-
-.sub-tile-card {
-  position: relative;
+/* Local Video Tile (Floating PiP) */
+.self-video-tile {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  width: 260px;
+  height: 160px;
   border-radius: 18px;
   overflow: hidden;
-  background: rgba(33, 40, 54, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: rgba(33, 40, 54, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  z-index: 20;
 }
 
-.sub-tile-card:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+.self-video-tile:hover {
+  border-color: rgba(255, 255, 255, 0.25);
   transform: translateY(-2px);
 }
 
-.sub-tile-card.is-pinned {
+.self-video-tile.pinned {
   border-color: #1d72fe;
 }
 

@@ -30,7 +30,7 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
   const rendererRef = useRef(null);
   const boneMapRef = useRef(new Map());
 
-  const [loadingStep, setLoadingStep] = useState('Initializing 3D Scene...');
+  const [loadingStep, setLoadingStep] = useState('Loading avatar...');
   const [loadProgress, setLoadProgress] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -234,12 +234,12 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
     const fbxLoader = new FBXLoader(manager);
     fbxLoader.setResourcePath('/models/sanket/textures/');
 
-    setLoadingStep('Loading Sanket 3D Avatar (MakeHuman/Sanket)...');
+    setLoadingStep('Loading avatar...');
 
     fbxLoader.load(
       '/models/sanket/MaleModelSankit.fbx',
       (fbx) => {
-        console.log('Loaded Sanket FBX successfully:', fbx);
+        console.log('Loaded avatar FBX successfully:', fbx);
         avatarRef.current = fbx;
 
         // Traverse avatar to inspect bones and materials
@@ -387,8 +387,8 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
         }
       },
       (err) => {
-        console.error('Error loading Sanket model FBX:', err);
-        setLoadingStep('Failed to load Sanket FBX model');
+        console.error('Error loading avatar model FBX:', err);
+        setLoadingStep('Failed to load avatar model');
       }
     );
 
@@ -407,7 +407,7 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
 
       for (let i = 0; i < SUPPORTED_SIGNS.length; i++) {
         const sign = SUPPORTED_SIGNS[i];
-        setLoadingStep(`Loading whole-word sign: ${sign.label} (${i + 1}/${SUPPORTED_SIGNS.length})...`);
+        // Static loading text
 
         try {
           let rawClip = null;
@@ -516,7 +516,7 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
 
       setSignsMeta(metaObj);
       setIsLoaded(true);
-      setLoadingStep('Ready: 5 Whole-Word Native ISL Signs Loaded');
+      // Finished loading
 
       if (onSignsLoaded) {
         onSignsLoaded(SUPPORTED_SIGNS);
@@ -593,7 +593,7 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
               <div className="loading-bar-fill" style={{ width: `${loadProgress}%` }} />
             </div>
           )}
-          <div className="loading-subtitle">Binding MakeHuman 99-bone armature & whole-word sign clips...</div>
+          {/* Subtitle removed */}
         </div>
       )}
 
