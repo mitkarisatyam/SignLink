@@ -61,7 +61,7 @@ export const SIGN_DICTIONARY = {
     id: 'DEAF',
     label: 'DEAF',
     keywords: [
-      'deaf', 'deafness', 'hard of hearing', 'hearing impaired', 'behray', 'sunai nahi deta'
+      'deaf', 'deafness', 'hard of hearing', 'hearing impaired', 'behray', 'sunai nahi deta', 'def', 'death', 'deff'
     ]
   },
   LIKE: {
@@ -89,7 +89,7 @@ export const SIGN_DICTIONARY = {
     id: 'HE',
     label: 'HE',
     keywords: [
-      'he', 'him', 'his', 'person', 'woh', 'wo', 'aadmi', 'man', 'guy'
+      'he', 'him', 'his', 'person', 'woh', 'wo', 'aadmi', 'man', 'guy', 'hey', 'hee', 'he is'
     ]
   }
 };

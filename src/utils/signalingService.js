@@ -1,36 +1,96 @@
 /**
  * src/utils/signalingService.js
  * 
- * Hybrid Signaling Service for WebRTC:
- * 1. BroadcastChannel: Instant zero-latency cross-tab communication in same browser.
- * 2. Vite SSE/HTTP: Real-time signaling across different browsers/devices.
- * 
- * Built-in message deduplication and targeted peer routing.
+ * Replaced Custom SSE Signaling with PeerJS Cloud DataConnections.
+ * Uses a host/guest fallback mechanism to create a "room" out of a PeerJS point-to-point connection.
  */
+
+import { Peer } from 'peerjs';
 
 export class SignalingService {
   constructor(roomId, peerId, onMessage) {
     this.roomId = roomId;
-    this.peerId = peerId;
+    this.peerId = peerId; // App-level internal peerId
     this.onMessage = onMessage;
+    
     this.seenMsgIds = new Set();
     this.isDestroyed = false;
     this.listeners = new Map();
+    this.connections = new Map(); // stores active PeerJS DataConnections
+    this.pendingMessages = [];
 
-    // 1. BroadcastChannel (fast local cross-window signaling)
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      try {
-        this.bc = new BroadcastChannel(`signlink_room_${roomId}`);
-        this.bc.onmessage = (event) => {
-          this._handleIncoming(event.data);
-        };
-      } catch (err) {
-        console.warn('[SIGNALING] BroadcastChannel init error:', err);
+    // Derive deterministic PeerJS IDs based on the roomId
+    this.hostId = `signlink-room-${roomId}-host`;
+    this.guestId = `signlink-room-${roomId}-guest`;
+
+    this._initializePeerJS();
+  }
+
+  _initializePeerJS() {
+    // 1. Attempt to connect as the Host
+    this.peer = new Peer(this.hostId, {
+      debug: 1, // minimal logs
+    });
+
+    this.peer.on('open', (id) => {
+      console.log('[SIGNALING] Connected to PeerJS Cloud as Host:', id);
+    });
+
+    // If another Host already exists (unavailable-id), we must be the Guest
+    this.peer.on('error', (err) => {
+      if (err.type === 'unavailable-id') {
+        console.log('[SIGNALING] Host already exists, switching to Guest mode...');
+        this.peer.destroy();
+
+        // 2. Connect as Guest
+        this.peer = new Peer(this.guestId, { debug: 1 });
+        
+        this.peer.on('open', (id) => {
+          console.log('[SIGNALING] Connected to PeerJS Cloud as Guest:', id);
+          
+          // The Guest must actively initiate the data connection to the Host
+          const conn = this.peer.connect(this.hostId, { reliable: true });
+          this._setupDataConnection(conn);
+        });
+
+        this.peer.on('connection', (conn) => {
+          this._setupDataConnection(conn);
+        });
+
+        this.peer.on('error', (guestErr) => {
+          console.error('[SIGNALING] PeerJS Guest Error:', guestErr);
+        });
+      } else {
+        console.error('[SIGNALING] PeerJS Error:', err);
       }
-    }
+    });
 
-    // 2. Server-Sent Events (SSE) for cross-browser / network signaling
-    this._connectSSE();
+    // If we are the Host, listen for the Guest connecting to us
+    this.peer.on('connection', (conn) => {
+      this._setupDataConnection(conn);
+    });
+  }
+
+  _setupDataConnection(conn) {
+    conn.on('open', () => {
+      console.log('[SIGNALING] Data connection established with', conn.peer);
+      this.connections.set(conn.peer, conn);
+
+      // Flush any messages that were sent before the connection opened
+      while (this.pendingMessages.length > 0) {
+        const msg = this.pendingMessages.shift();
+        conn.send(msg);
+      }
+    });
+
+    conn.on('data', (data) => {
+      this._handleIncoming(data);
+    });
+
+    conn.on('close', () => {
+      console.log('[SIGNALING] Data connection closed with', conn.peer);
+      this.connections.delete(conn.peer);
+    });
   }
 
   on(event, handler) {
@@ -64,34 +124,6 @@ export class SignalingService {
     this.send({ type: 'peer_joined', sender: this.peerId });
   }
 
-  _connectSSE() {
-    if (typeof window === 'undefined' || !window.EventSource) return;
-
-    try {
-      const sseUrl = `/api/signaling/stream?roomId=${encodeURIComponent(this.roomId)}&peerId=${encodeURIComponent(this.peerId)}`;
-      this.eventSource = new EventSource(sseUrl);
-
-      this.eventSource.onmessage = (event) => {
-        if (!event.data) return;
-        try {
-          const parsed = JSON.parse(event.data);
-          // Format from server: { fromPeerId, message }
-          if (parsed && parsed.message) {
-            this._handleIncoming(parsed.message);
-          }
-        } catch (err) {
-          console.warn('[SIGNALING] SSE parse error:', err);
-        }
-      };
-
-      this.eventSource.onerror = (err) => {
-        // SSE auto-reconnects; no action required
-      };
-    } catch (err) {
-      console.warn('[SIGNALING] EventSource connection error:', err);
-    }
-  }
-
   _handleIncoming(payload) {
     if (!payload || typeof payload !== 'object' || this.isDestroyed) return;
 
@@ -107,7 +139,6 @@ export class SignalingService {
     if (msgId) {
       if (this.seenMsgIds.has(msgId)) return;
       this.seenMsgIds.add(msgId);
-      // Keep set bounded
       if (this.seenMsgIds.size > 500) {
         const oldest = this.seenMsgIds.values().next().value;
         this.seenMsgIds.delete(oldest);
@@ -138,46 +169,29 @@ export class SignalingService {
       timestamp: Date.now()
     };
 
-    // 1. Broadcast locally
-    if (this.bc) {
-      try {
-        this.bc.postMessage(payload);
-      } catch (err) {
-        console.warn('[SIGNALING] BroadcastChannel postMessage error:', err);
-      }
+    if (this.connections.size === 0) {
+      // If we are not connected yet, queue the message
+      this.pendingMessages.push(payload);
+      return;
     }
 
-    // 2. Broadcast via Vite HTTP signaling API (for cross-browser or LAN)
-    try {
-      fetch('/api/signaling/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomId: this.roomId,
-          fromPeerId: this.peerId,
-          toPeerId,
-          message: payload
-        })
-      }).catch(() => {
-        // Silent catch for dev mode
-      });
-    } catch {}
+    // Broadcast via PeerJS DataConnection
+    for (const [_, conn] of this.connections.entries()) {
+      if (conn.open) {
+        conn.send(payload);
+      } else {
+        this.pendingMessages.push(payload);
+      }
+    }
   }
 
   destroy() {
     this.isDestroyed = true;
-    if (this.bc) {
-      try {
-        this.bc.close();
-      } catch {}
-      this.bc = null;
+    if (this.peer) {
+      this.peer.destroy();
+      this.peer = null;
     }
-    if (this.eventSource) {
-      try {
-        this.eventSource.close();
-      } catch {}
-      this.eventSource = null;
-    }
+    this.connections.clear();
     this.seenMsgIds.clear();
   }
 }
