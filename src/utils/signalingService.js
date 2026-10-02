@@ -28,13 +28,13 @@ export class SignalingService {
 
   _initializePeerJS() {
     // 1. Attempt to connect as the Host
+    this.isHost = true;
     this.peer = new Peer(this.hostId, {
       debug: 1, // minimal logs
     });
 
     this.peer.on('open', (id) => {
       console.log('[SIGNALING] Connected to PeerJS Cloud as Host:', id);
-      this.isHost = true;
     });
 
     // If another Host already exists (unavailable-id), we must be the Guest
@@ -44,11 +44,11 @@ export class SignalingService {
         this.peer.destroy();
 
         // 2. Connect as Guest
+        this.isHost = false;
         this.peer = new Peer(this.guestId, { debug: 1 });
         
         this.peer.on('open', (id) => {
           console.log('[SIGNALING] Connected to PeerJS Cloud as Guest:', id);
-          this.isHost = false;
           
           // The Guest must actively initiate the data connection to the Host
           const conn = this.peer.connect(this.hostId, { reliable: true });
