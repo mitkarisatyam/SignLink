@@ -341,10 +341,27 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     // Handle remote track
     pc.ontrack = (event) => {
       console.log('[WEBRTC] Remote track received:', event.track.kind);
-      if (remoteVideoRef.current && event.streams[0]) {
+      if (!remoteVideoRef.current) return;
+
+      if (event.streams?.[0]) {
         remoteVideoRef.current.srcObject = event.streams[0];
+      } else {
+        if (!(remoteVideoRef.current.srcObject instanceof MediaStream)) {
+          remoteVideoRef.current.srcObject = new MediaStream();
+        }
+        remoteVideoRef.current.srcObject.addTrack(event.track);
+      }
+
+      setConnectionStatus('connected');
+      showToast('Participant connected');
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (
+        pc.iceConnectionState === 'connected' ||
+        pc.iceConnectionState === 'completed'
+      ) {
         setConnectionStatus('connected');
-        showToast('Participant connected');
       }
     };
 
