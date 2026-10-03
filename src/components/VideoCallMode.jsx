@@ -241,7 +241,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = 'en-US'; // Force English to ensure standard phonetic matching
+    recognition.lang = navigator.language || 'en-US'; // Use user's OS language locale (e.g. en-IN) for better accent matching
 
     recognition.onstart = () => {
       setSpeechStatus('Listening (Mic Active)');
@@ -281,19 +281,29 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       lastMatchesRef.current = matches;
     };
 
+    let hasFatalError = false;
+
     recognition.onerror = (event) => {
-      console.warn('[SPEECH] Recognition error:', event.error);
-      setSpeechStatus(`Error: ${event.error}`);
+      if (event.error !== 'no-speech') {
+        console.warn('[SPEECH] Recognition error:', event.error);
+        setSpeechStatus(`Error: ${event.error}`);
+        if (['not-allowed', 'audio-capture', 'network'].includes(event.error)) {
+          hasFatalError = true;
+        }
+      }
     };
 
     recognition.onend = () => {
-      setSpeechStatus('Reconnecting...');
+      if (hasFatalError) return; // Do not reconnect if microphone is blocked or missing
+      
+      // We do not set 'Reconnecting...' here because Chrome automatically triggers onend after a few seconds of silence.
+      // We want this recycling to be invisible to the user.
       if (isMountedRef.current) {
         setTimeout(() => {
-          if (isMountedRef.current) {
+          if (isMountedRef.current && !hasFatalError) {
             try { recognition.start(); } catch (e) {}
           }
-        }, 500); // Wait 500ms before restarting to prevent Chrome rate limiting
+        }, 1000); // Wait 1 second before restarting
       }
     };
 
