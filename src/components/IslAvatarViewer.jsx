@@ -178,13 +178,12 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
     camera.lookAt(new THREE.Vector3(0, 580, 0));
     cameraRef.current = camera;
 
-    // 3. Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    // 3. Renderer setup - Optimized for buttery smooth 60fps on laptops
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setClearColor(0x000000, 0); // Transparent
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Shadows and preserveDrawingBuffer disabled for maximum performance
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     rendererRef.current = renderer;
 
@@ -199,7 +198,7 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
     // Warm, soft key light for natural skin
     const keyLight = new THREE.DirectionalLight(0xfff0e6, 1.4);
     keyLight.position.set(200, 800, 800);
-    keyLight.castShadow = true;
+    keyLight.castShadow = false; // Disabled for buttery smooth framerates
     scene.add(keyLight);
 
     // Soft neutral fill light to ensure hands and face are clear

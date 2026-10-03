@@ -525,7 +525,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
-        audio: { echoCancellation: true, noiseSuppression: true }
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } // autoGainControl automatically boosts volume when sitting far from laptop
       });
       localStreamRef.current = stream;
       if (localVideoRef.current) {
