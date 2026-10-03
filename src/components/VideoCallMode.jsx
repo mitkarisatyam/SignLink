@@ -162,6 +162,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [remoteSignText, setRemoteSignText] = useState('');
   const [remoteSpeechText, setRemoteSpeechText] = useState('');
   const [liveSpeechText, setLiveSpeechText] = useState('');
+  const [liveSpeechHistory, setLiveSpeechHistory] = useState('');
   const [speechStatus, setSpeechStatus] = useState('Initializing...');
   
   const userRoleRef = useRef(userRole);
@@ -272,6 +273,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         
         const transcript = currentResult[0].transcript.trim();
         setLiveSpeechText(transcript);
+
+        if (currentResult.isFinal) {
+          setLiveSpeechHistory(prev => (prev + ' ' + transcript).trim());
+          setLiveSpeechText('');
+        }
 
         const matches = matchAllSignsFromSpeech(transcript);
         let divergeIndex = 0;
@@ -1380,7 +1386,9 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                       <span style={{ fontSize: '12px', color: speechStatus.includes('Error') ? '#ef4444' : '#94a3b8', marginBottom: '4px' }}>
                         {speechStatus}
                       </span>
-                      <i>"{liveSpeechText || 'Say a supported word (e.g. Home, Come, Go)'}"</i>
+                      <i style={{ wordBreak: 'break-word', overflowY: 'auto' }}>
+                        {liveSpeechHistory ? `"${liveSpeechHistory} ${liveSpeechText}"` : `"${liveSpeechText || 'Say a supported word (e.g. Home, Come, Go)'}"`}
+                      </i>
                     </div>
                   </DraggableWindow>
                 </>
