@@ -404,7 +404,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     pc.onicecandidate = (event) => {
       if (event.candidate && signalingRef.current) {
         signalingRef.current.send(
-          { type: 'candidate', candidate: event.candidate },
+          { type: 'candidate', candidate: event.candidate.toJSON() },
           targetPeerId
         );
       }
@@ -497,7 +497,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       await pc.setLocalDescription(offer);
 
       signalingRef.current?.send(
-        { type: 'offer', sdp: pc.localDescription },
+        { type: 'offer', sdp: pc.localDescription.toJSON() },
         targetPeerId
       );
     } catch (err) {
@@ -525,7 +525,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       await pc.setLocalDescription(answer);
 
       signalingRef.current?.send(
-        { type: 'answer', sdp: pc.localDescription },
+        { type: 'answer', sdp: pc.localDescription.toJSON() },
         senderId
       );
     } catch (err) {
