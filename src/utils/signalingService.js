@@ -89,7 +89,8 @@ export class SignalingService {
       }
 
       // Always flush any queued messages if the connection is now open
-      if (conn.open) {
+      const flushMessages = () => {
+        if (!conn.open) return;
         const toSend = [...this.pendingMessages];
         this.pendingMessages = [];
         
@@ -101,7 +102,13 @@ export class SignalingService {
             this.pendingMessages.push(msg);
           }
         }
-      }
+        
+        if (this.pendingMessages.length > 0) {
+          setTimeout(flushMessages, 500);
+        }
+      };
+      
+      flushMessages();
     };
 
     if (conn.open) {
