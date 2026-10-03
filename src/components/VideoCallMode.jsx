@@ -175,7 +175,8 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   // Call timer
   const [callDuration, setCallDuration] = useState(0);
 
-  // Refs
+  // Media streams & Refs
+  const [remoteStream, setRemoteStream] = useState(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -341,16 +342,21 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     // Handle remote track
     pc.ontrack = (event) => {
       console.log('[WEBRTC] Remote track received:', event.track.kind);
-      if (!remoteVideoRef.current) return;
 
-      if (event.streams?.[0]) {
-        remoteVideoRef.current.srcObject = event.streams[0];
-      } else {
-        if (!(remoteVideoRef.current.srcObject instanceof MediaStream)) {
-          remoteVideoRef.current.srcObject = new MediaStream();
+      setRemoteStream(prevStream => {
+        let streamToUse = prevStream;
+        if (event.streams && event.streams[0]) {
+          streamToUse = event.streams[0];
+        } else {
+          if (!streamToUse) {
+            streamToUse = new MediaStream();
+          }
+          if (!streamToUse.getTracks().includes(event.track)) {
+            streamToUse.addTrack(event.track);
+          }
         }
-        remoteVideoRef.current.srcObject.addTrack(event.track);
-      }
+        return streamToUse;
+      });
 
       setConnectionStatus('connected');
       showToast('Participant connected');
@@ -440,6 +446,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     }
     setRemotePeerId(null);
     setConnectionStatus('waiting');
+    setRemoteStream(null);
     iceCandidateQueueRef.current = [];
   }, []);
 
@@ -628,6 +635,16 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       }
     }
   });
+
+  // Sync remote stream to remote video element
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      if (remoteVideoRef.current.srcObject !== remoteStream) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.play().catch(e => console.warn('[WEBRTC] Auto-play prevented for remote video:', e));
+      }
+    }
+  }, [remoteStream, userRole]);
 
   const toggleFullScreen = () => {
     const stage = document.querySelector('.glass-stage-content');
