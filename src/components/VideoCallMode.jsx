@@ -1109,6 +1109,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                         ref={handleRemoteVideoRef}
                         autoPlay
                         playsInline
+                        muted={true}
                         onLoadedMetadata={(e) => console.log('[WEBRTC DEBUG] Deaf remote video loadedmetadata:', e.target.videoWidth, 'x', e.target.videoHeight)}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
@@ -1152,6 +1153,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                       ref={handleRemoteVideoRef}
                       autoPlay
                       playsInline
+                      muted={true}
                       onLoadedMetadata={(e) => console.log('[WEBRTC DEBUG] Hearing remote video loadedmetadata:', e.target.videoWidth, 'x', e.target.videoHeight)}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />

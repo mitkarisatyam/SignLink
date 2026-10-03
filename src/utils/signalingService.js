@@ -74,7 +74,7 @@ export class SignalingService {
   }
 
   _setupDataConnection(conn) {
-    conn.on('open', () => {
+    const handleOpen = () => {
       console.log('[SIGNALING] Data connection established with', conn.peer);
       this.connections.set(conn.peer, conn);
 
@@ -88,7 +88,13 @@ export class SignalingService {
         const msg = this.pendingMessages.shift();
         conn.send(msg);
       }
-    });
+    };
+
+    if (conn.open) {
+      handleOpen();
+    } else {
+      conn.on('open', handleOpen);
+    }
 
     conn.on('data', (data) => {
       this._handleIncoming(data);
