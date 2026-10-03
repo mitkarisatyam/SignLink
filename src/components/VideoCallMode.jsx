@@ -183,14 +183,17 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   
   const handleRemoteVideoRef = useCallback((node) => {
     remoteVideoRef.current = node;
+    console.log('[WEBRTC DEBUG] handleRemoteVideoRef called. Node exists:', !!node);
     if (node && remoteStreamRef.current) {
       if (node.srcObject !== remoteStreamRef.current) {
         console.log('[WEBRTC DEBUG] Assigning stream to remote video element on mount');
         node.srcObject = remoteStreamRef.current;
       }
-      node.play().catch(e => console.warn('[WEBRTC DEBUG] Auto-play prevented:', e));
+      node.play().then(() => {
+        console.log('[WEBRTC DEBUG] play() succeeded in callback ref');
+      }).catch(e => console.error('[WEBRTC DEBUG] Auto-play prevented in callback ref:', e.name, e.message));
     }
-  }, [remoteTrackCount]); // Re-evaluate if track count changes
+  }, [remoteTrackCount]);
 
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
@@ -354,7 +357,9 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
     // Handle remote track
     pc.ontrack = (event) => {
-      console.log('[WEBRTC DEBUG] Remote track received:', event.track.kind, 'Ready state:', event.track.readyState, 'Streams count:', event.streams?.length);
+      console.log('[WEBRTC DEBUG] === ONTRACK FIRED ===');
+      console.log(`[WEBRTC DEBUG] Track info - kind: ${event.track.kind}, readyState: ${event.track.readyState}, enabled: ${event.track.enabled}, muted: ${event.track.muted}`);
+      console.log('[WEBRTC DEBUG] Streams count:', event.streams?.length || 0);
 
       let streamToUse;
       if (event.streams && event.streams[0]) {
@@ -363,32 +368,34 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       } else {
         if (!remoteStreamRef.current) {
           remoteStreamRef.current = new MediaStream();
-          console.log('[WEBRTC DEBUG] Created new local MediaStream for remote tracks');
+          console.log('[WEBRTC DEBUG] Created new fallback MediaStream');
         }
         streamToUse = remoteStreamRef.current;
         if (!streamToUse.getTracks().includes(event.track)) {
           streamToUse.addTrack(event.track);
-          console.log('[WEBRTC DEBUG] Added separate track. Total tracks now:', streamToUse.getTracks().length);
+          console.log('[WEBRTC DEBUG] Added track to fallback stream');
         }
       }
+      
+      console.log(`[WEBRTC DEBUG] Final stream: ${streamToUse.id} | Audio tracks: ${streamToUse.getAudioTracks().length} | Video tracks: ${streamToUse.getVideoTracks().length}`);
       
       remoteStreamRef.current = streamToUse;
       setRemoteTrackCount(prev => prev + 1);
 
       if (remoteVideoRef.current) {
-        console.log('[WEBRTC DEBUG] remoteVideoRef is present, assigning srcObject');
+        console.log('[WEBRTC DEBUG] remoteVideoRef exists, assigning srcObject');
         if (remoteVideoRef.current.srcObject !== streamToUse) {
           remoteVideoRef.current.srcObject = streamToUse;
         }
         remoteVideoRef.current.play().then(() => {
-          console.log('[WEBRTC DEBUG] play() succeeded for remote video');
-        }).catch(e => console.warn('[WEBRTC DEBUG] play() failed:', e));
+          console.log('[WEBRTC DEBUG] play() succeeded on ontrack');
+        }).catch(e => console.error('[WEBRTC DEBUG] play() FAILED on ontrack:', e.name, e.message));
       } else {
         console.warn('[WEBRTC DEBUG] remoteVideoRef is NOT present when ontrack fired');
       }
 
       setConnectionStatus('connected');
-      showToast('Participant connected');
+      showToast('Participant media connected');
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -627,6 +634,45 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       stopLocalMedia();
     };
   }, [closePeerConnection, stopLocalMedia]);
+
+  // Diagnostic Logger for Media States
+  useEffect(() => {
+    if (!inCall) return;
+    const interval = setInterval(() => {
+      console.log('--- WEBRTC MEDIA DIAGNOSTICS ---');
+      // LOCAL
+      if (localStreamRef.current) {
+        const vTrack = localStreamRef.current.getVideoTracks()[0];
+        console.log(`[LOCAL] Stream ID: ${localStreamRef.current.id}`);
+        console.log(`[LOCAL] Video Track: ${vTrack ? 'Exists' : 'Missing'} | readyState: ${vTrack?.readyState} | enabled: ${vTrack?.enabled}`);
+      } else {
+        console.log('[LOCAL] localStreamRef is NULL');
+      }
+
+      // PC Senders
+      if (pcRef.current) {
+        const senders = pcRef.current.getSenders();
+        console.log(`[PC] Senders count: ${senders.length}`);
+        console.log(`[PC] connectionState: ${pcRef.current.connectionState} | iceConnectionState: ${pcRef.current.iceConnectionState}`);
+      } else {
+        console.log('[PC] pcRef is NULL');
+      }
+
+      // REMOTE
+      const video = remoteVideoRef.current;
+      console.log(`[REMOTE] Video Element Exists: ${!!video}`);
+      if (video) {
+        const srcObj = video.srcObject;
+        console.log(`[REMOTE] srcObject Assigned: ${!!srcObj}`);
+        if (srcObj) {
+          console.log(`[REMOTE] srcObject Tracks: ${srcObj.getTracks().map(t => `${t.kind}(${t.readyState}, enabled:${t.enabled}, muted:${t.muted})`).join(', ')}`);
+        }
+        console.log(`[REMOTE] Video State - readyState: ${video.readyState}, paused: ${video.paused}, dimensions: ${video.videoWidth}x${video.videoHeight}`);
+      }
+      console.log('--------------------------------');
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [inCall]);
 
   // Toggle Microphone
   const toggleMic = () => {
