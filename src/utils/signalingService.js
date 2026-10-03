@@ -73,6 +73,23 @@ export class SignalingService {
 
         this.peer.on('error', (guestErr) => {
           console.error('[SIGNALING] PeerJS Guest Error:', guestErr);
+          if (guestErr.type === 'unavailable-id') {
+            console.log('[SIGNALING] Guest ID taken, generating random fallback Guest ID...');
+            this.peer.destroy();
+            
+            const fallbackId = `${this.guestId}-${Math.random().toString(36).substr(2, 5)}`;
+            this.peer = new Peer(fallbackId, peerConfig);
+            
+            this.peer.on('open', (id) => {
+              console.log('[SIGNALING] Connected to PeerJS Cloud as fallback Guest:', id);
+              const conn = this.peer.connect(this.hostId, { reliable: true });
+              this._setupDataConnection(conn);
+            });
+            
+            this.peer.on('connection', (conn) => {
+              this._setupDataConnection(conn);
+            });
+          }
         });
       } else {
         console.error('[SIGNALING] PeerJS Error:', err);

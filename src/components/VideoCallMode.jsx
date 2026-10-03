@@ -607,6 +607,13 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const handleJoinCall = useCallback(async (targetRoom) => {
     if (!targetRoom.trim()) return;
     const cleanRoom = targetRoom.trim();
+
+    // STRICT MODE FIX: Clean up ghost instances to free up the PeerJS ID and event listeners
+    if (signalingRef.current) {
+      signalingRef.current.destroy();
+      signalingRef.current = null;
+    }
+
     setRoomId(cleanRoom);
     setInCall(true);
     setConnectionStatus('waiting');
