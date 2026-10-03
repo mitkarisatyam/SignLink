@@ -162,6 +162,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [remoteSignText, setRemoteSignText] = useState('');
   const [remoteSpeechText, setRemoteSpeechText] = useState('');
   const [liveSpeechText, setLiveSpeechText] = useState('');
+  const [speechStatus, setSpeechStatus] = useState('Initializing...');
   
   const userRoleRef = useRef(userRole);
   useEffect(() => {
@@ -240,7 +241,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = navigator.language || 'en-US';
+    recognition.lang = 'en-US'; // Force English to ensure standard phonetic matching
+
+    recognition.onstart = () => {
+      setSpeechStatus('Listening (Mic Active)');
+    };
 
     recognition.onresult = (event) => {
       if (!isMountedRef.current) return;
@@ -278,9 +283,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
     recognition.onerror = (event) => {
       console.warn('[SPEECH] Recognition error:', event.error);
+      setSpeechStatus(`Error: ${event.error}`);
     };
 
     recognition.onend = () => {
+      setSpeechStatus('Reconnecting...');
       if (isMountedRef.current) {
         setTimeout(() => {
           if (isMountedRef.current) {
@@ -1349,7 +1356,9 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                     isVisible={showSignText}
                   >
                     <div style={{ padding: '15px', fontSize: '16px', color: '#a78bfa', textAlign: 'center', background: 'rgba(0,0,0,0.5)', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                      <span style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>Listening...</span>
+                      <span style={{ fontSize: '12px', color: speechStatus.includes('Error') ? '#ef4444' : '#94a3b8', marginBottom: '4px' }}>
+                        {speechStatus}
+                      </span>
                       <i>"{liveSpeechText || 'Say a supported word (e.g. Home, Come, Go)'}"</i>
                     </div>
                   </DraggableWindow>

@@ -140,13 +140,13 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
         const handLandmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: '/models/hand_landmarker.task',
-            delegate: 'GPU'
+            delegate: 'CPU'
           },
           runningMode: 'VIDEO',
           numHands: 2,
-          minHandDetectionConfidence: 0.3,
-          minHandPresenceConfidence: 0.3,
-          minTrackingConfidence: 0.3
+          minHandDetectionConfidence: 0.15,
+          minHandPresenceConfidence: 0.15,
+          minTrackingConfidence: 0.15
         });
 
         if (isCancelled) return;
@@ -160,13 +160,13 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
           const handLandmarker = await HandLandmarker.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-              delegate: 'GPU'
+              delegate: 'CPU'
             },
             runningMode: 'VIDEO',
             numHands: 2,
-            minHandDetectionConfidence: 0.3,
-            minHandPresenceConfidence: 0.3,
-            minTrackingConfidence: 0.3
+            minHandDetectionConfidence: 0.15,
+            minHandPresenceConfidence: 0.15,
+            minTrackingConfidence: 0.15
           });
           if (!isCancelled) {
             landmarkerRef.current = handLandmarker;
