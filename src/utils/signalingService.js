@@ -74,7 +74,11 @@ export class SignalingService {
   }
 
   _setupDataConnection(conn) {
+    let isOpen = false;
+
     const handleOpen = () => {
+      if (isOpen) return;
+      isOpen = true;
       console.log('[SIGNALING] Data connection established with', conn.peer);
       this.connections.set(conn.peer, conn);
 
@@ -97,12 +101,17 @@ export class SignalingService {
     }
 
     conn.on('data', (data) => {
+      if (!isOpen) {
+        console.warn(`[SIGNALING] ⚠️ Received data from ${conn.peer} before 'open' event! Forcing connection open.`);
+        handleOpen();
+      }
       this._handleIncoming(data);
     });
 
     conn.on('close', () => {
       console.log('[SIGNALING] Data connection closed with', conn.peer);
       this.connections.delete(conn.peer);
+      isOpen = false;
     });
   }
 
@@ -145,12 +154,20 @@ export class SignalingService {
     if (!payload || typeof payload !== 'object' || this.isDestroyed) return;
 
     const { msgId, fromPeerId, toPeerId, message } = payload;
+    
+    console.log(`[SIGNALING] 📩 INCOMING RAW PAYLOAD from ${fromPeerId} to ${toPeerId}`, payload);
 
     // Ignore self-messages
-    if (fromPeerId === this.peerId) return;
+    if (fromPeerId === this.peerId) {
+      console.log(`[SIGNALING] ⚠️ Ignored self-message`);
+      return;
+    }
 
     // Ignore messages targeted to a different peer
-    if (toPeerId && toPeerId !== this.peerId) return;
+    if (toPeerId && toPeerId !== this.peerId) {
+      console.log(`[SIGNALING] ⚠️ Ignored message meant for ${toPeerId} (I am ${this.peerId})`);
+      return;
+    }
 
     // Deduplicate
     if (msgId) {
@@ -167,10 +184,13 @@ export class SignalingService {
     }
 
     if (message && typeof message === 'object' && message.type) {
+      console.log(`[SIGNALING] 🎯 EMITTING EVENT: ${message.type}`, message);
       this.emit(message.type, { ...message, sender: fromPeerId });
       if (message.type === 'leave') {
         this.emit('peer_left', { sender: fromPeerId });
       }
+    } else {
+      console.warn(`[SIGNALING] ❌ INVALID MESSAGE FORMAT`, message);
     }
   }
 
@@ -186,17 +206,22 @@ export class SignalingService {
       timestamp: Date.now()
     };
 
+    console.log(`[SIGNALING] 📤 SENDING PAYLOAD to ${toPeerId || 'ALL'}:`, payload);
+
     if (this.connections.size === 0) {
+      console.warn(`[SIGNALING] ⚠️ No active connections. Queueing payload.`);
       // If we are not connected yet, queue the message
       this.pendingMessages.push(payload);
       return;
     }
 
     // Broadcast via PeerJS DataConnection
-    for (const [_, conn] of this.connections.entries()) {
+    for (const [peerName, conn] of this.connections.entries()) {
       if (conn.open) {
+        console.log(`[SIGNALING] 🚀 Sending through connection to ${peerName}`);
         conn.send(payload);
       } else {
+        console.warn(`[SIGNALING] ⚠️ Connection to ${peerName} is NOT open. Queueing payload.`);
         this.pendingMessages.push(payload);
       }
     }

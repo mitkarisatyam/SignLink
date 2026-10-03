@@ -347,6 +347,9 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       pcRef.current.close();
       pcRef.current = null;
     }
+    
+    // Crucial: Clear any stale ICE candidates from previous failed negotiation attempts
+    iceCandidateQueueRef.current = [];
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     pcRef.current = pc;
@@ -531,10 +534,14 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       const parsedSdp = typeof offerSdp === 'string' ? JSON.parse(offerSdp) : offerSdp;
       await pc.setRemoteDescription(new RTCSessionDescription(parsedSdp));
 
-      // Flush queued candidates
+      // Flush queued candidates safely
       while (iceCandidateQueueRef.current.length > 0) {
         const c = iceCandidateQueueRef.current.shift();
-        await pc.addIceCandidate(new RTCIceCandidate(c));
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(c));
+        } catch (e) {
+          console.warn('[WEBRTC] Queued candidate rejected (likely stale):', e);
+        }
       }
 
       const answer = await pc.createAnswer();
@@ -557,7 +564,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(parsedSdp));
         while (iceCandidateQueueRef.current.length > 0) {
           const c = iceCandidateQueueRef.current.shift();
-          await pcRef.current.addIceCandidate(new RTCIceCandidate(c));
+          try {
+            await pcRef.current.addIceCandidate(new RTCIceCandidate(c));
+          } catch (e) {
+            console.warn('[WEBRTC] Queued candidate rejected (likely stale):', e);
+          }
         }
       }
     } catch (err) {
