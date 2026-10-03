@@ -176,9 +176,22 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [callDuration, setCallDuration] = useState(0);
 
   // Media streams & Refs
-  const [remoteStream, setRemoteStream] = useState(null);
+  const remoteStreamRef = useRef(null);
+  const [remoteTrackCount, setRemoteTrackCount] = useState(0); // to force re-renders if needed
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  
+  const handleRemoteVideoRef = useCallback((node) => {
+    remoteVideoRef.current = node;
+    if (node && remoteStreamRef.current) {
+      if (node.srcObject !== remoteStreamRef.current) {
+        console.log('[WEBRTC DEBUG] Assigning stream to remote video element on mount');
+        node.srcObject = remoteStreamRef.current;
+      }
+      node.play().catch(e => console.warn('[WEBRTC DEBUG] Auto-play prevented:', e));
+    }
+  }, [remoteTrackCount]); // Re-evaluate if track count changes
+
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const pcRef = useRef(null);
@@ -341,22 +354,38 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
     // Handle remote track
     pc.ontrack = (event) => {
-      console.log('[WEBRTC] Remote track received:', event.track.kind);
+      console.log('[WEBRTC DEBUG] Remote track received:', event.track.kind, 'Ready state:', event.track.readyState, 'Streams count:', event.streams?.length);
 
-      setRemoteStream(prevStream => {
-        let streamToUse = prevStream;
-        if (event.streams && event.streams[0]) {
-          streamToUse = event.streams[0];
-        } else {
-          if (!streamToUse) {
-            streamToUse = new MediaStream();
-          }
-          if (!streamToUse.getTracks().includes(event.track)) {
-            streamToUse.addTrack(event.track);
-          }
+      let streamToUse;
+      if (event.streams && event.streams[0]) {
+        streamToUse = event.streams[0];
+        console.log('[WEBRTC DEBUG] Using event.streams[0] with ID:', streamToUse.id);
+      } else {
+        if (!remoteStreamRef.current) {
+          remoteStreamRef.current = new MediaStream();
+          console.log('[WEBRTC DEBUG] Created new local MediaStream for remote tracks');
         }
-        return streamToUse;
-      });
+        streamToUse = remoteStreamRef.current;
+        if (!streamToUse.getTracks().includes(event.track)) {
+          streamToUse.addTrack(event.track);
+          console.log('[WEBRTC DEBUG] Added separate track. Total tracks now:', streamToUse.getTracks().length);
+        }
+      }
+      
+      remoteStreamRef.current = streamToUse;
+      setRemoteTrackCount(prev => prev + 1);
+
+      if (remoteVideoRef.current) {
+        console.log('[WEBRTC DEBUG] remoteVideoRef is present, assigning srcObject');
+        if (remoteVideoRef.current.srcObject !== streamToUse) {
+          remoteVideoRef.current.srcObject = streamToUse;
+        }
+        remoteVideoRef.current.play().then(() => {
+          console.log('[WEBRTC DEBUG] play() succeeded for remote video');
+        }).catch(e => console.warn('[WEBRTC DEBUG] play() failed:', e));
+      } else {
+        console.warn('[WEBRTC DEBUG] remoteVideoRef is NOT present when ontrack fired');
+      }
 
       setConnectionStatus('connected');
       showToast('Participant connected');
@@ -446,7 +475,8 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     }
     setRemotePeerId(null);
     setConnectionStatus('waiting');
-    setRemoteStream(null);
+    remoteStreamRef.current = null;
+    setRemoteTrackCount(0);
     iceCandidateQueueRef.current = [];
   }, []);
 
@@ -636,15 +666,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     }
   });
 
-  // Sync remote stream to remote video element
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      if (remoteVideoRef.current.srcObject !== remoteStream) {
-        remoteVideoRef.current.srcObject = remoteStream;
-        remoteVideoRef.current.play().catch(e => console.warn('[WEBRTC] Auto-play prevented for remote video:', e));
-      }
-    }
-  }, [remoteStream, userRole]);
+  // Sync remote stream to remote video element dynamically is handled by handleRemoteVideoRef now
 
   const toggleFullScreen = () => {
     const stage = document.querySelector('.glass-stage-content');
@@ -966,9 +988,10 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                   <>
                     <div style={{ flex: 1, position: 'relative', borderRight: '1px solid rgba(255,255,255,0.1)' }}>
                       <video
-                        ref={remoteVideoRef}
+                        ref={handleRemoteVideoRef}
                         autoPlay
                         playsInline
+                        onLoadedMetadata={(e) => console.log('[WEBRTC DEBUG] Deaf remote video loadedmetadata:', e.target.videoWidth, 'x', e.target.videoHeight)}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                       
@@ -1008,9 +1031,10 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                 ) : (
                   <div style={{ width: '100%', height: '100%', position: 'relative' }}>
                     <video
-                      ref={remoteVideoRef}
+                      ref={handleRemoteVideoRef}
                       autoPlay
                       playsInline
+                      onLoadedMetadata={(e) => console.log('[WEBRTC DEBUG] Hearing remote video loadedmetadata:', e.target.videoWidth, 'x', e.target.videoHeight)}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                     
