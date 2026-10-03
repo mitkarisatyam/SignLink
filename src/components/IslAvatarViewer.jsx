@@ -42,6 +42,7 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
   const currentWordRef = useRef('COME');
   const finishTimeoutRef = useRef(null);
   const pendingSignRef = useRef(null);
+  const signQueueRef = useRef([]);
   const lastPlayTimestampRef = useRef(0);
 
   // Expose playSign & controls to parent component
@@ -87,6 +88,11 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
 
     // Debounce exact same word triggered within 350ms to ignore accidental rapid double-triggers
     if (isPlayingRef.current && currentWordRef.current === targetWord && (now - lastPlayTimestampRef.current < 350)) {
+      return;
+    }
+
+    if (isPlayingRef.current) {
+      signQueueRef.current.push(targetWord);
       return;
     }
 
@@ -143,6 +149,12 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
       setIsPlaying(false);
       if (onAnimationStateChange) onAnimationStateChange(false, targetWord);
       finishTimeoutRef.current = null;
+
+      // Play next sign in queue if any
+      if (signQueueRef.current.length > 0) {
+        const nextWord = signQueueRef.current.shift();
+        playSignAnimation(nextWord);
+      }
     }, durationMs + 120);
   };
 

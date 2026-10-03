@@ -219,3 +219,70 @@ export function matchAllSignsFromSpeech(rawText) {
 
   return matchedSigns;
 }
+
+/**
+ * Extracts multiple sequential signs and also returns words that were NOT matched in the dictionary.
+ */
+export function extractSpeechSignsAndUnmatched(rawText) {
+  if (!rawText) return { matchedSigns: [], unmatchedWords: [] };
+  const clean = rawText.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { matchedSigns: [], unmatchedWords: [] };
+
+  const matchedSigns = [];
+  const unmatchedWords = [];
+  
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    let foundMatch = null;
+    let skipCount = 0;
+    
+    // Check phrase matches starting at this word
+    for (const signId of ALL_SIGN_IDS) {
+       for (const kw of SIGN_DICTIONARY[signId].keywords) {
+         if (kw.includes(' ')) {
+           const kwWords = kw.split(' ');
+           let matchPhrase = true;
+           for (let j = 0; j < kwWords.length; j++) {
+             if (i + j >= words.length || words[i + j] !== kwWords[j]) {
+               matchPhrase = false;
+               break;
+             }
+           }
+           if (matchPhrase) {
+             foundMatch = signId;
+             skipCount = kwWords.length - 1;
+             break;
+           }
+         }
+       }
+       if (foundMatch) break;
+    }
+
+    if (!foundMatch) {
+      // Check single word match
+      for (const signId of ALL_SIGN_IDS) {
+        if (word === signId.toLowerCase() || word === SIGN_DICTIONARY[signId].label.toLowerCase()) {
+          foundMatch = signId;
+          break;
+        }
+        for (const kw of SIGN_DICTIONARY[signId].keywords) {
+          if (!kw.includes(' ') && word === kw) {
+            foundMatch = signId;
+            break;
+          }
+        }
+        if (foundMatch) break;
+      }
+    }
+
+    if (foundMatch) {
+      matchedSigns.push(foundMatch);
+      i += skipCount;
+    } else {
+      unmatchedWords.push(word);
+    }
+  }
+
+  return { matchedSigns, unmatchedWords };
+}

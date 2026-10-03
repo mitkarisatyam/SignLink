@@ -23,7 +23,8 @@ import {
 } from 'lucide-react';
 import IslAvatarViewer from './IslAvatarViewer';
 import DeafVideoSignRecognizer from './DeafVideoSignRecognizer';
-import { matchAllSignsFromSpeech } from '../utils/speechDictionary';
+import { extractSpeechSignsAndUnmatched, matchAllSignsFromSpeech } from '../utils/speechDictionary';
+import UpcomingSignModal from './demo/UpcomingSignModal';
 import { SignalingService } from '../utils/signalingService';
 import './VideoCallMode.css';
 
@@ -163,6 +164,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [remoteSpeechText, setRemoteSpeechText] = useState('');
   const [liveSpeechText, setLiveSpeechText] = useState('');
   const [liveSpeechHistory, setLiveSpeechHistory] = useState('');
+  const [unknownWords, setUnknownWords] = useState([]);
   const [speechStatus, setSpeechStatus] = useState('Initializing...');
   
   const userRoleRef = useRef(userRole);
@@ -275,11 +277,12 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         setLiveSpeechText(transcript);
 
         if (currentResult.isFinal) {
-          setLiveSpeechHistory(prev => (prev + ' ' + transcript).trim());
+          setLiveSpeechHistory(prev => prev ? prev + '\n' + transcript : transcript);
           setLiveSpeechText('');
         }
 
-        const matches = matchAllSignsFromSpeech(transcript);
+        const { matchedSigns: matches, unmatchedWords } = extractSpeechSignsAndUnmatched(transcript);
+        
         let divergeIndex = 0;
         const prevMatches = lastMatchesRef.current;
         while (divergeIndex < prevMatches.length && divergeIndex < matches.length && prevMatches[divergeIndex] === matches[divergeIndex]) {
@@ -288,12 +291,18 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         const newSigns = matches.slice(divergeIndex);
         
         if (newSigns.length > 0) {
-          const word = newSigns[newSigns.length - 1];
-          console.log('[SPEECH] Recognized sign to send:', word);
+          console.log('[SPEECH] Recognized signs to send:', newSigns);
           if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-            dataChannelRef.current.send(JSON.stringify({ type: 'speech', text: word }));
+            dataChannelRef.current.send(JSON.stringify({ type: 'speech', text: newSigns }));
           }
         }
+
+        if (unmatchedWords.length > 0) {
+          // Find the new unmatched words that weren't there in the previous tick
+          // This is a simple approximation, we just take the last unmatched word
+          setUnknownWords([unmatchedWords[unmatchedWords.length - 1]]);
+        }
+        
         lastMatchesRef.current = matches;
       };
 
@@ -406,9 +415,10 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
             window.speechSynthesis.speak(utterance);
           }
         } else if (payload.type === 'speech') {
-          setRemoteSpeechText(payload.text);
+          const signs = Array.isArray(payload.text) ? payload.text : [payload.text];
+          setRemoteSpeechText(signs.join(' '));
           if (avatarRef.current) {
-            avatarRef.current.playSign(payload.text);
+            signs.forEach(s => avatarRef.current.playSign(s));
           }
         }
       } catch (err) {
@@ -1386,11 +1396,29 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                       <span style={{ fontSize: '12px', color: speechStatus.includes('Error') ? '#ef4444' : '#94a3b8', marginBottom: '4px' }}>
                         {speechStatus}
                       </span>
-                      <i style={{ wordBreak: 'break-word', overflowY: 'auto' }}>
-                        {liveSpeechHistory ? `"${liveSpeechHistory} ${liveSpeechText}"` : `"${liveSpeechText || 'Say a supported word (e.g. Home, Come, Go)'}"`}
-                      </i>
+                      <div style={{ wordBreak: 'break-word', overflowY: 'auto', textAlign: 'left', width: '100%' }}>
+                        {liveSpeechHistory && (
+                          <div style={{ whiteSpace: 'pre-line', color: '#cbd5e1', marginBottom: '5px' }}>
+                            {liveSpeechHistory}
+                          </div>
+                        )}
+                        <i style={{ color: '#a78bfa' }}>
+                          {liveSpeechText || (liveSpeechHistory ? '' : 'Say a supported word (e.g. Home, Come, Go)')}
+                        </i>
+                      </div>
                     </div>
                   </DraggableWindow>
+                  
+                  {/* Unknown Words Popup Modal */}
+                  <div style={{ position: 'fixed', top: '100px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {unknownWords.map((word, idx) => (
+                      <UpcomingSignModal 
+                        key={`${word}-${idx}`} 
+                        word={word} 
+                        onClose={() => setUnknownWords(prev => prev.filter((_, i) => i !== idx))} 
+                      />
+                    ))}
+                  </div>
                 </>
               )}
 
