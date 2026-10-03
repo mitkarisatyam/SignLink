@@ -347,9 +347,6 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       pcRef.current.close();
       pcRef.current = null;
     }
-    
-    // Crucial: Clear any stale ICE candidates from previous failed negotiation attempts
-    iceCandidateQueueRef.current = [];
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     pcRef.current = pc;

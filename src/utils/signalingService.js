@@ -74,23 +74,33 @@ export class SignalingService {
   }
 
   _setupDataConnection(conn) {
-    let isOpen = false;
+    let hasInitialized = false;
 
     const handleOpen = () => {
-      if (isOpen) return;
-      isOpen = true;
-      console.log('[SIGNALING] Data connection established with', conn.peer);
-      this.connections.set(conn.peer, conn);
+      if (!hasInitialized) {
+        hasInitialized = true;
+        console.log('[SIGNALING] Data connection initialized with', conn.peer);
+        this.connections.set(conn.peer, conn);
 
-      // Prevent SDP collisions: Only the Guest announces joining
-      if (!this.isHost && this.wantsToJoin) {
-        this.send({ type: 'peer_joined', sender: this.peerId });
+        // Prevent SDP collisions: Only the Guest announces joining
+        if (!this.isHost && this.wantsToJoin) {
+          this.send({ type: 'peer_joined', sender: this.peerId });
+        }
       }
 
-      // Flush any messages that were sent before the connection opened
-      while (this.pendingMessages.length > 0) {
-        const msg = this.pendingMessages.shift();
-        conn.send(msg);
+      // Always flush any queued messages if the connection is now open
+      if (conn.open) {
+        const toSend = [...this.pendingMessages];
+        this.pendingMessages = [];
+        
+        for (const msg of toSend) {
+          try {
+            conn.send(msg);
+          } catch(e) {
+            console.error('[SIGNALING] Failed to flush pending message, requeueing:', e);
+            this.pendingMessages.push(msg);
+          }
+        }
       }
     };
 
@@ -101,8 +111,9 @@ export class SignalingService {
     }
 
     conn.on('data', (data) => {
-      if (!isOpen) {
+      if (!hasInitialized || !conn.open) {
         console.warn(`[SIGNALING] ⚠️ Received data from ${conn.peer} before 'open' event! Forcing connection open.`);
+        conn.open = true; // Force PeerJS flag
         handleOpen();
       }
       this._handleIncoming(data);
@@ -219,7 +230,12 @@ export class SignalingService {
     for (const [peerName, conn] of this.connections.entries()) {
       if (conn.open) {
         console.log(`[SIGNALING] 🚀 Sending through connection to ${peerName}`);
-        conn.send(payload);
+        try {
+          conn.send(payload);
+        } catch (e) {
+          console.error(`[SIGNALING] ⚠️ Failed to send, queueing payload:`, e);
+          this.pendingMessages.push(payload);
+        }
       } else {
         console.warn(`[SIGNALING] ⚠️ Connection to ${peerName} is NOT open. Queueing payload.`);
         this.pendingMessages.push(payload);
