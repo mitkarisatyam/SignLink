@@ -1443,6 +1443,109 @@
   }
 }
 
+@media (max-width: 768px) {
+  /* Lobby adjustments */
+  .glass-lobby-shell {
+    border-radius: 20px;
+  }
+  .glass-lobby-header {
+    padding: 0 16px;
+  }
+  .glass-lobby-main {
+    padding: 16px;
+  }
+  .glass-lobby-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .glass-lobby-card h2 {
+    font-size: 24px;
+  }
+  .glass-lobby-card {
+    margin-top: -40px;
+  }
+
+  /* Call shell adjustments */
+  .glass-call-shell {
+    flex-direction: column;
+    border-radius: 0;
+    max-height: 100vh;
+  }
+  
+  /* Horizontal Navigation Rail at top */
+  .glass-nav-rail {
+    width: 100%;
+    min-width: unset;
+    height: auto;
+    flex-direction: row;
+    padding: 12px 16px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  
+  .rail-top, .rail-bottom {
+    flex-direction: row;
+    gap: 12px;
+  }
+  
+  .rail-nav-group {
+    flex-direction: row;
+    gap: 12px;
+  }
+
+  /* Workspace adjustments */
+  .glass-call-body {
+    flex-direction: column;
+  }
+  
+  .glass-video-section {
+    padding: 12px;
+  }
+
+  /* Target the inline style flex container in VideoCallMode.jsx that has inset: 0 */
+  .glass-stage-content > div[style*="display: flex"] {
+    flex-direction: column !important;
+  }
+  .glass-stage-content > div > div {
+    border-right: none !important;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+
+  /* Floating controls */
+  .floating-control-capsule {
+    bottom: 12px;
+    padding: 6px 8px;
+    gap: 8px;
+  }
+
+  .capsule-glass-circle {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .capsule-end-call-btn {
+    width: 44px;
+    height: 40px;
+  }
+
+  /* Self video PIP */
+  .self-video-tile {
+    width: 100px;
+    height: 140px;
+    bottom: 70px;
+    left: 12px;
+  }
+
+  .glass-call-header {
+    margin-bottom: 12px;
+  }
+
+  .header-meeting-title {
+    font-size: 16px;
+  }
+}
+
+
 /* ===================================================
    LIGHT THEME OVERRIDES FOR VIDEO CALL
    =================================================== */
