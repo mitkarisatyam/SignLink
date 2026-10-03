@@ -159,6 +159,9 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [peerId] = useState(() => 'peer_' + Math.random().toString(36).slice(2, 9));
   const [remotePeerId, setRemotePeerId] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('waiting'); // 'waiting' | 'connecting' | 'connected' | 'disconnected'
+  const [debugInfo, setDebugInfo] = useState(null);
+  const lastOntrackInfoRef = useRef('None');
+  const lastWebRtcErrorRef = useRef('None');
   
   // Media controls
   const [micActive, setMicActive] = useState(true);
@@ -360,6 +363,8 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       console.log('[WEBRTC DEBUG] === ONTRACK FIRED ===');
       console.log(`[WEBRTC DEBUG] Track info - kind: ${event.track.kind}, readyState: ${event.track.readyState}, enabled: ${event.track.enabled}, muted: ${event.track.muted}`);
       console.log('[WEBRTC DEBUG] Streams count:', event.streams?.length || 0);
+
+      lastOntrackInfoRef.current = `${new Date().toLocaleTimeString()} | ${event.track.kind} | ${event.track.readyState} | streamCount:${event.streams?.length || 0}`;
 
       let streamToUse;
       if (event.streams && event.streams[0]) {
@@ -640,11 +645,34 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     if (!inCall) return;
     const interval = setInterval(() => {
       console.log('--- WEBRTC MEDIA DIAGNOSTICS ---');
+      const info = {
+        role: signalingRef.current ? (signalingRef.current.isHost ? 'HOST' : 'GUEST') : 'UNKNOWN',
+        peerId,
+        pcState: pcRef.current?.connectionState || 'null',
+        signalingState: pcRef.current?.signalingState || 'null',
+        iceState: pcRef.current?.iceConnectionState || 'null',
+        localVideo: '0',
+        localAudio: '0',
+        remoteVideo: '0',
+        remoteAudio: '0',
+        remoteStreamExists: !!remoteStreamRef.current ? 'YES' : 'NO',
+        remoteSrcObjectExists: !!remoteVideoRef.current?.srcObject ? 'YES' : 'NO',
+        remoteVideoReadyState: remoteVideoRef.current?.readyState || 'null',
+        remoteVideoPaused: remoteVideoRef.current?.paused !== undefined ? (remoteVideoRef.current.paused ? 'YES' : 'NO') : 'null',
+        remoteDimensions: `${remoteVideoRef.current?.videoWidth || 0}x${remoteVideoRef.current?.videoHeight || 0}`,
+        lastOntrack: lastOntrackInfoRef.current,
+        lastError: lastWebRtcErrorRef.current
+      };
+
       // LOCAL
       if (localStreamRef.current) {
-        const vTrack = localStreamRef.current.getVideoTracks()[0];
+        const vTracks = localStreamRef.current.getVideoTracks();
+        const aTracks = localStreamRef.current.getAudioTracks();
+        info.localVideo = `${vTracks.length} (${vTracks[0]?.readyState || 'N/A'})`;
+        info.localAudio = `${aTracks.length} (${aTracks[0]?.readyState || 'N/A'})`;
+        
         console.log(`[LOCAL] Stream ID: ${localStreamRef.current.id}`);
-        console.log(`[LOCAL] Video Track: ${vTrack ? 'Exists' : 'Missing'} | readyState: ${vTrack?.readyState} | enabled: ${vTrack?.enabled}`);
+        console.log(`[LOCAL] Video Track: ${vTracks.length ? 'Exists' : 'Missing'} | readyState: ${vTracks[0]?.readyState} | enabled: ${vTracks[0]?.enabled}`);
       } else {
         console.log('[LOCAL] localStreamRef is NULL');
       }
@@ -665,10 +693,16 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         const srcObj = video.srcObject;
         console.log(`[REMOTE] srcObject Assigned: ${!!srcObj}`);
         if (srcObj) {
+          const vTracks = srcObj.getVideoTracks();
+          const aTracks = srcObj.getAudioTracks();
+          info.remoteVideo = `${vTracks.length} (${vTracks[0]?.readyState || 'N/A'})`;
+          info.remoteAudio = `${aTracks.length} (${aTracks[0]?.readyState || 'N/A'})`;
           console.log(`[REMOTE] srcObject Tracks: ${srcObj.getTracks().map(t => `${t.kind}(${t.readyState}, enabled:${t.enabled}, muted:${t.muted})`).join(', ')}`);
         }
         console.log(`[REMOTE] Video State - readyState: ${video.readyState}, paused: ${video.paused}, dimensions: ${video.videoWidth}x${video.videoHeight}`);
       }
+      
+      setDebugInfo(info);
       console.log('--------------------------------');
     }, 4000);
     return () => clearInterval(interval);
@@ -1024,6 +1058,44 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                 </>
               )}
             </div>
+            {/* WEBRTC DEBUG PANEL (Development Only) */}
+            {debugInfo && (
+              <div style={{
+                position: 'absolute', top: '70px', left: '20px', zIndex: 9999,
+                background: 'rgba(0,0,0,0.8)', border: '1px solid red', color: '#0f0',
+                padding: '10px', fontSize: '12px', fontFamily: 'monospace', borderRadius: '8px',
+                maxWidth: '400px', wordWrap: 'break-word', maxHeight: '70vh', overflowY: 'auto'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <b style={{ color: 'red' }}>WEBRTC DEBUG</b>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(debugInfo, null, 2));
+                      showToast('Debug log copied!');
+                    }}
+                    style={{ background: 'white', color: 'black', border: 'none', padding: '2px 6px', cursor: 'pointer', fontSize: '10px' }}
+                  >
+                    COPY LOG
+                  </button>
+                </div>
+                <div><b>ROLE:</b> {debugInfo.role}</div>
+                <div><b>Peer ID:</b> {debugInfo.peerId}</div>
+                <div><b>PC State:</b> {debugInfo.pcState}</div>
+                <div><b>Signaling:</b> {debugInfo.signalingState}</div>
+                <div><b>ICE State:</b> {debugInfo.iceState}</div>
+                <div><b>Local Video:</b> {debugInfo.localVideo}</div>
+                <div><b>Local Audio:</b> {debugInfo.localAudio}</div>
+                <div><b>Remote Video:</b> {debugInfo.remoteVideo}</div>
+                <div><b>Remote Audio:</b> {debugInfo.remoteAudio}</div>
+                <div><b>Remote Stream:</b> {debugInfo.remoteStreamExists}</div>
+                <div><b>srcObject:</b> {debugInfo.remoteSrcObjectExists}</div>
+                <div><b>video.readyState:</b> {debugInfo.remoteVideoReadyState}</div>
+                <div><b>video.paused:</b> {debugInfo.remoteVideoPaused}</div>
+                <div><b>Dimensions:</b> {debugInfo.remoteDimensions}</div>
+                <div style={{ marginTop: '4px' }}><b>Last ontrack:</b><br/>{debugInfo.lastOntrack}</div>
+                <div style={{ marginTop: '4px' }}><b>Last error:</b><br/>{debugInfo.lastError}</div>
+              </div>
+            )}
 
             {/* Video Stage Layout */}
             <div className="glass-stage-content" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#000' }}>
