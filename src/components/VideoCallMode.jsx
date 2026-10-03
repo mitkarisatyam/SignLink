@@ -163,6 +163,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [remoteSpeechText, setRemoteSpeechText] = useState('');
   const [liveSpeechText, setLiveSpeechText] = useState('');
   
+  const userRoleRef = useRef(userRole);
+  useEffect(() => {
+    userRoleRef.current = userRole;
+  }, [userRole]);
+  
   const isMountedRef = useRef(true);
   const lastResultIndexRef = useRef(0);
   const lastMatchesRef = useRef([]);
@@ -199,6 +204,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const [remoteTrackCount, setRemoteTrackCount] = useState(0); // to force re-renders if needed
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const avatarRef = useRef(null);
   
   const handleRemoteVideoRef = useCallback((node) => {
     remoteVideoRef.current = node;
@@ -262,11 +268,16 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       
       if (newSigns.length > 0) {
         const word = newSigns[newSigns.length - 1];
+        console.log('[SPEECH] Recognized sign to send:', word);
         if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
           dataChannelRef.current.send(JSON.stringify({ type: 'speech', text: word }));
         }
       }
       lastMatchesRef.current = matches;
+    };
+
+    recognition.onerror = (event) => {
+      console.warn('[SPEECH] Recognition error:', event.error);
     };
 
     recognition.onend = () => {
@@ -341,21 +352,32 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         const payload = JSON.parse(event.data);
         if (payload.type === 'sign') {
           setRemoteSignText(payload.word);
-          if (userRole === 'hearing' && window.speechSynthesis) {
+          if (userRoleRef.current === 'hearing' && window.speechSynthesis) {
             window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(payload.word);
+            window.speechSynthesis.resume(); // Ensure TTS engine is not stuck
+            const utterance = new SpeechSynthesisUtterance(payload.word.toLowerCase());
             utterance.rate = 0.9;
             utterance.pitch = 1.0;
+            
+            // Try to find a good English voice
+            const voices = window.speechSynthesis.getVoices();
+            const engVoice = voices.find((v) => v.lang.startsWith('en') && !v.name.includes('Google') && v.name.includes('Natural')) ||
+                             voices.find((v) => v.lang.startsWith('en'));
+            if (engVoice) utterance.voice = engVoice;
+
             window.speechSynthesis.speak(utterance);
           }
         } else if (payload.type === 'speech') {
           setRemoteSpeechText(payload.text);
+          if (avatarRef.current) {
+            avatarRef.current.playSign(payload.text);
+          }
         }
       } catch (err) {
         console.warn('[WEBRTC] DataChannel parse error:', err);
       }
     };
-  }, [userRole]);
+  }, []);
 
   // Initialize WebRTC Peer Connection
   const createPeerConnection = useCallback((targetPeerId) => {
@@ -1183,7 +1205,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                       </div>
                     </div>
                     <div style={{ flex: 1, position: 'relative', background: 'transparent' }}>
-                      <IslAvatarViewer activeSign={remoteSpeechText || 'HELLO'} />
+                      <IslAvatarViewer ref={avatarRef} activeSign={remoteSpeechText || 'HELLO'} />
                     </div>
                   </>
                 ) : (
@@ -1314,6 +1336,17 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                   >
                     <div style={{ padding: '20px', fontSize: '24px', color: 'white', textAlign: 'center', background: 'rgba(0,0,0,0.5)', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {remoteSignText || 'Waiting for sign...'}
+                    </div>
+                  </DraggableWindow>
+
+                  <DraggableWindow 
+                    title="My Live Speech" 
+                    defaultRect={{ x: window.innerWidth - 320, y: 140, width: 300, height: 100 }}
+                    isVisible={showSignText}
+                  >
+                    <div style={{ padding: '15px', fontSize: '16px', color: '#a78bfa', textAlign: 'center', background: 'rgba(0,0,0,0.5)', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      <span style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>Listening...</span>
+                      <i>"{liveSpeechText || 'Say a supported word (e.g. Home, Come, Go)'}"</i>
                     </div>
                   </DraggableWindow>
                 </>
