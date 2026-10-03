@@ -237,83 +237,94 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
     
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    recognition.lang = navigator.language || 'en-US'; // Use user's OS language locale (e.g. en-IN) for better accent matching
-
-    recognition.onstart = () => {
-      setSpeechStatus('Listening (Mic Active)');
-    };
-
-    recognition.onresult = (event) => {
-      if (!isMountedRef.current) return;
-      const results = event.results;
-      const resultIndex = event.resultIndex !== undefined ? event.resultIndex : results.length - 1;
-      
-      if (resultIndex !== lastResultIndexRef.current) {
-        lastMatchesRef.current = [];
-        lastResultIndexRef.current = resultIndex;
-      }
-
-      const currentResult = results[resultIndex];
-      if (!currentResult) return;
-      
-      const transcript = currentResult[0].transcript.trim();
-      setLiveSpeechText(transcript);
-
-      const matches = matchAllSignsFromSpeech(transcript);
-      let divergeIndex = 0;
-      const prevMatches = lastMatchesRef.current;
-      while (divergeIndex < prevMatches.length && divergeIndex < matches.length && prevMatches[divergeIndex] === matches[divergeIndex]) {
-        divergeIndex++;
-      }
-      const newSigns = matches.slice(divergeIndex);
-      
-      if (newSigns.length > 0) {
-        const word = newSigns[newSigns.length - 1];
-        console.log('[SPEECH] Recognized sign to send:', word);
-        if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-          dataChannelRef.current.send(JSON.stringify({ type: 'speech', text: word }));
-        }
-      }
-      lastMatchesRef.current = matches;
-    };
-
+    let recognition = null;
     let hasFatalError = false;
 
-    recognition.onerror = (event) => {
-      if (event.error !== 'no-speech') {
-        console.warn('[SPEECH] Recognition error:', event.error);
-        setSpeechStatus(`Error: ${event.error}`);
-        if (['not-allowed', 'audio-capture', 'network'].includes(event.error)) {
-          hasFatalError = true;
+    const startRecognition = () => {
+      if (!isMountedRef.current || hasFatalError) return;
+
+      // Reset tracking refs for the new instance
+      lastResultIndexRef.current = -1;
+      lastMatchesRef.current = [];
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.lang = navigator.language || 'en-US';
+
+      recognition.onstart = () => {
+        setSpeechStatus('Listening (Mic Active)');
+      };
+
+      recognition.onresult = (event) => {
+        if (!isMountedRef.current) return;
+        const results = event.results;
+        const resultIndex = event.resultIndex !== undefined ? event.resultIndex : results.length - 1;
+        
+        if (resultIndex !== lastResultIndexRef.current) {
+          lastMatchesRef.current = [];
+          lastResultIndexRef.current = resultIndex;
         }
-      }
-    };
 
-    recognition.onend = () => {
-      if (hasFatalError) return; // Do not reconnect if microphone is blocked or missing
-      
-      // We do not set 'Reconnecting...' here because Chrome automatically triggers onend after a few seconds of silence.
-      // We want this recycling to be invisible to the user.
-      if (isMountedRef.current) {
-        setTimeout(() => {
-          if (isMountedRef.current && !hasFatalError) {
-            try { recognition.start(); } catch (e) {}
+        const currentResult = results[resultIndex];
+        if (!currentResult) return;
+        
+        const transcript = currentResult[0].transcript.trim();
+        setLiveSpeechText(transcript);
+
+        const matches = matchAllSignsFromSpeech(transcript);
+        let divergeIndex = 0;
+        const prevMatches = lastMatchesRef.current;
+        while (divergeIndex < prevMatches.length && divergeIndex < matches.length && prevMatches[divergeIndex] === matches[divergeIndex]) {
+          divergeIndex++;
+        }
+        const newSigns = matches.slice(divergeIndex);
+        
+        if (newSigns.length > 0) {
+          const word = newSigns[newSigns.length - 1];
+          console.log('[SPEECH] Recognized sign to send:', word);
+          if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+            dataChannelRef.current.send(JSON.stringify({ type: 'speech', text: word }));
           }
-        }, 1000); // Wait 1 second before restarting
+        }
+        lastMatchesRef.current = matches;
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error !== 'no-speech') {
+          console.warn('[SPEECH] Recognition error:', event.error);
+          setSpeechStatus(`Error: ${event.error}`);
+          if (['not-allowed', 'audio-capture', 'network'].includes(event.error)) {
+            hasFatalError = true;
+          }
+        }
+      };
+
+      recognition.onend = () => {
+        if (hasFatalError || !isMountedRef.current) return;
+        
+        // Destroy old instance and create a new one to prevent Chrome zombie state
+        setTimeout(() => {
+          startRecognition();
+        }, 1000);
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error('[SPEECH] Failed to start:', e);
       }
     };
 
-    try {
-      recognition.start();
-    } catch (e) {}
+    startRecognition();
 
     return () => {
       isMountedRef.current = false;
-      try { recognition.stop(); } catch (e) {}
+      hasFatalError = true; // Stop loop
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
     };
   }, [userRole]);
 
