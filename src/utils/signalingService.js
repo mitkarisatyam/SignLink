@@ -27,11 +27,23 @@ export class SignalingService {
   }
 
   _initializePeerJS() {
+    const peerConfig = {
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        ]
+      }
+    };
+
     // 1. Attempt to connect as the Host
     this.isHost = true;
-    this.peer = new Peer(this.hostId, {
-      debug: 1, // minimal logs
-    });
+    this.peer = new Peer(this.hostId, peerConfig);
 
     this.peer.on('open', (id) => {
       console.log('[SIGNALING] Connected to PeerJS Cloud as Host:', id);
@@ -45,7 +57,7 @@ export class SignalingService {
 
         // 2. Connect as Guest
         this.isHost = false;
-        this.peer = new Peer(this.guestId, { debug: 1 });
+        this.peer = new Peer(this.guestId, peerConfig);
         
         this.peer.on('open', (id) => {
           console.log('[SIGNALING] Connected to PeerJS Cloud as Guest:', id);
@@ -129,7 +141,16 @@ export class SignalingService {
     conn.on('close', () => {
       console.log('[SIGNALING] Data connection closed with', conn.peer);
       this.connections.delete(conn.peer);
-      isOpen = false;
+
+      if (!this.isHost && this.wantsToJoin && !this.isDestroyed) {
+        console.log('[SIGNALING] Reconnecting to Host after sudden close...');
+        setTimeout(() => {
+          if (!this.isDestroyed && this.peer) {
+            const newConn = this.peer.connect(this.hostId, { reliable: true });
+            this._setupDataConnection(newConn);
+          }
+        }, 1500);
+      }
     });
   }
 
