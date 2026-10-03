@@ -282,7 +282,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
     recognition.onend = () => {
       if (isMountedRef.current) {
-        try { recognition.start(); } catch (e) {}
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            try { recognition.start(); } catch (e) {}
+          }
+        }, 500); // Wait 500ms before restarting to prevent Chrome rate limiting
       }
     };
 

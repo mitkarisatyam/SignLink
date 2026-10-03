@@ -143,7 +143,10 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
             delegate: 'GPU'
           },
           runningMode: 'VIDEO',
-          numHands: 2
+          numHands: 2,
+          minHandDetectionConfidence: 0.3,
+          minHandPresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3
         });
 
         if (isCancelled) return;
@@ -160,7 +163,10 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
               delegate: 'GPU'
             },
             runningMode: 'VIDEO',
-            numHands: 2
+            numHands: 2,
+            minHandDetectionConfidence: 0.3,
+            minHandPresenceConfidence: 0.3,
+            minTrackingConfidence: 0.3
           });
           if (!isCancelled) {
             landmarkerRef.current = handLandmarker;
