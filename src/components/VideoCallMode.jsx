@@ -416,7 +416,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     pc.onicecandidate = (event) => {
       if (event.candidate && signalingRef.current) {
         signalingRef.current.send(
-          { type: 'candidate', candidate: event.candidate.toJSON() },
+          { type: 'candidate', candidate: JSON.stringify(event.candidate.toJSON()) },
           targetPeerId
         );
       }
@@ -508,8 +508,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       });
       await pc.setLocalDescription(offer);
 
+      // Wait a tiny bit for DataChannel to fully open on the remote side
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       signalingRef.current?.send(
-        { type: 'offer', sdp: pc.localDescription.toJSON() },
+        { type: 'offer', sdp: JSON.stringify(pc.localDescription.toJSON()) },
         targetPeerId
       );
     } catch (err) {
@@ -525,7 +528,8 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       setRemotePeerId(senderId);
       const pc = createPeerConnection(senderId);
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
+      const parsedSdp = typeof offerSdp === 'string' ? JSON.parse(offerSdp) : offerSdp;
+      await pc.setRemoteDescription(new RTCSessionDescription(parsedSdp));
 
       // Flush queued candidates
       while (iceCandidateQueueRef.current.length > 0) {
@@ -537,7 +541,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       await pc.setLocalDescription(answer);
 
       signalingRef.current?.send(
-        { type: 'answer', sdp: pc.localDescription.toJSON() },
+        { type: 'answer', sdp: JSON.stringify(pc.localDescription.toJSON()) },
         senderId
       );
     } catch (err) {
@@ -549,7 +553,8 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   const handleAnswer = useCallback(async (senderId, answerSdp) => {
     try {
       if (pcRef.current) {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(answerSdp));
+        const parsedSdp = typeof answerSdp === 'string' ? JSON.parse(answerSdp) : answerSdp;
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(parsedSdp));
         while (iceCandidateQueueRef.current.length > 0) {
           const c = iceCandidateQueueRef.current.shift();
           await pcRef.current.addIceCandidate(new RTCIceCandidate(c));
@@ -563,10 +568,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
   // Handle incoming ICE Candidate
   const handleCandidate = useCallback(async (senderId, candidate) => {
     try {
+      const parsedCandidate = typeof candidate === 'string' ? JSON.parse(candidate) : candidate;
       if (pcRef.current && pcRef.current.remoteDescription && pcRef.current.remoteDescription.type) {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(parsedCandidate));
       } else {
-        iceCandidateQueueRef.current.push(candidate);
+        iceCandidateQueueRef.current.push(parsedCandidate);
       }
     } catch (err) {
       console.error('[WEBRTC] Failed to add ICE candidate:', err);
@@ -647,6 +653,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       console.log('--- WEBRTC MEDIA DIAGNOSTICS ---');
       const info = {
         role: signalingRef.current ? (signalingRef.current.isHost ? 'HOST' : 'GUEST') : 'UNKNOWN',
+        sigConns: signalingRef.current?.connections?.size || 0,
         peerId,
         pcState: pcRef.current?.connectionState || 'null',
         signalingState: pcRef.current?.signalingState || 'null',
@@ -1079,6 +1086,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                   </button>
                 </div>
                 <div><b>ROLE:</b> {debugInfo.role}</div>
+                <div><b>SigConns:</b> {debugInfo.sigConns}</div>
                 <div><b>Peer ID:</b> {debugInfo.peerId}</div>
                 <div><b>PC State:</b> {debugInfo.pcState}</div>
                 <div><b>Signaling:</b> {debugInfo.signalingState}</div>
