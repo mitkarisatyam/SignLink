@@ -1166,45 +1166,6 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                 </>
               )}
             </div>
-            {/* WEBRTC DEBUG PANEL (Development Only) */}
-            {debugInfo && (
-              <div style={{
-                position: 'absolute', top: '70px', left: '20px', zIndex: 9999,
-                background: 'rgba(0,0,0,0.8)', border: '1px solid red', color: '#0f0',
-                padding: '10px', fontSize: '12px', fontFamily: 'monospace', borderRadius: '8px',
-                maxWidth: '400px', wordWrap: 'break-word', maxHeight: '70vh', overflowY: 'auto'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <b style={{ color: 'red' }}>WEBRTC DEBUG</b>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(JSON.stringify(debugInfo, null, 2));
-                      showToast('Debug log copied!');
-                    }}
-                    style={{ background: 'white', color: 'black', border: 'none', padding: '2px 6px', cursor: 'pointer', fontSize: '10px' }}
-                  >
-                    COPY LOG
-                  </button>
-                </div>
-                <div><b>ROLE:</b> {debugInfo.role}</div>
-                <div><b>SigConns:</b> {debugInfo.sigConns}</div>
-                <div><b>Peer ID:</b> {debugInfo.peerId}</div>
-                <div><b>PC State:</b> {debugInfo.pcState}</div>
-                <div><b>Signaling:</b> {debugInfo.signalingState}</div>
-                <div><b>ICE State:</b> {debugInfo.iceState}</div>
-                <div><b>Local Video:</b> {debugInfo.localVideo}</div>
-                <div><b>Local Audio:</b> {debugInfo.localAudio}</div>
-                <div><b>Remote Video:</b> {debugInfo.remoteVideo}</div>
-                <div><b>Remote Audio:</b> {debugInfo.remoteAudio}</div>
-                <div><b>Remote Stream:</b> {debugInfo.remoteStreamExists}</div>
-                <div><b>srcObject:</b> {debugInfo.remoteSrcObjectExists}</div>
-                <div><b>video.readyState:</b> {debugInfo.remoteVideoReadyState}</div>
-                <div><b>video.paused:</b> {debugInfo.remoteVideoPaused}</div>
-                <div><b>Dimensions:</b> {debugInfo.remoteDimensions}</div>
-                <div style={{ marginTop: '4px' }}><b>Last ontrack:</b><br/>{debugInfo.lastOntrack}</div>
-                <div style={{ marginTop: '4px' }}><b>Last error:</b><br/>{debugInfo.lastError}</div>
-              </div>
-            )}
 
             {/* Video Stage Layout */}
             <div className="glass-stage-content" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#000' }}>
