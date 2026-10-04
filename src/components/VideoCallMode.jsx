@@ -251,7 +251,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       lastMatchesRef.current = [];
 
       recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       recognition.lang = navigator.language || 'en-US';
