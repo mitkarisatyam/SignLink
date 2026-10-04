@@ -242,6 +242,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     
     let recognition = null;
     let hasFatalError = false;
+    let retryDelay = 250;
 
     const startRecognition = () => {
       if (!isMountedRef.current || hasFatalError) return;
@@ -258,6 +259,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
       recognition.onstart = () => {
         setSpeechStatus('Listening (Mic Active)');
+        retryDelay = 250;
       };
 
       recognition.onresult = (event) => {
@@ -313,6 +315,9 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
           if (['not-allowed', 'audio-capture'].includes(event.error)) {
             hasFatalError = true;
           }
+          if (event.error === 'network') {
+            retryDelay = Math.min(retryDelay * 2, 5000);
+          }
         }
       };
 
@@ -322,7 +327,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         // Destroy old instance and create a new one to prevent Chrome zombie state
         setTimeout(() => {
           startRecognition();
-        }, 250);
+        }, retryDelay);
       };
 
       try {
