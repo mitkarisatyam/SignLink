@@ -112,10 +112,7 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
       finishTimeoutRef.current = null;
     }
 
-    // Stop current playing action if different
-    if (currentActionRef.current && currentActionRef.current !== action) {
-      currentActionRef.current.stop();
-    }
+    const prevAction = (currentActionRef.current && currentActionRef.current !== action) ? currentActionRef.current : null;
 
     currentActionRef.current = action;
     setCurrentWord(targetWord);
@@ -127,6 +124,10 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
     action.play();
+
+    if (prevAction) {
+      action.crossFadeFrom(prevAction, 0.35, true);
+    }
 
     isPlayingRef.current = true;
     setIsPlaying(true);

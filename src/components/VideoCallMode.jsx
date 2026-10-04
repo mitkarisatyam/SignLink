@@ -251,7 +251,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       lastMatchesRef.current = [];
 
       recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       recognition.lang = navigator.language || 'en-US';
@@ -322,7 +322,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         // Destroy old instance and create a new one to prevent Chrome zombie state
         setTimeout(() => {
           startRecognition();
-        }, 1000);
+        }, 250);
       };
 
       try {

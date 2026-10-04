@@ -264,7 +264,7 @@ function forwardModel(scaledSeq) {
 
 export class MlSignRecognizer {
   constructor(options = {}) {
-    this.rejectionThreshold = 0.40;
+    this.rejectionThreshold = 0.85;
     this.windowSize = 22;
     this.minWindowFrames = 4;
     this.debounceMs = 1500;
@@ -412,8 +412,7 @@ export class MlSignRecognizer {
     }
 
     // Candidate confirmation stability:
-    // Instant triggers for all matches that pass the 40% threshold!
-    const requiredFrames = 1;
+    const requiredFrames = 3;
 
     if (predictedClass === this.candidateWord) {
       this.candidateFrames++;

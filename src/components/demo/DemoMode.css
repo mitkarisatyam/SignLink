@@ -1841,8 +1841,8 @@
 /* Minimalist Horizontal Toast */
 .future-word-toast-container {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  top: 24px;
+  left: 24px;
   z-index: 1000;
   background: rgba(15, 23, 42, 0.95);
   backdrop-filter: blur(12px);
@@ -1853,8 +1853,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-width: 280px;
-  max-width: 400px;
+  min-width: 200px;
+  max-width: 280px;
   animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: auto;
 }
@@ -1862,7 +1862,7 @@
 @keyframes toastSlideIn {
   from {
     opacity: 0;
-    transform: translateX(30px);
+    transform: translateX(-30px);
   }
   to {
     opacity: 1;
@@ -1874,7 +1874,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 8px 12px;
 }
 
 .toast-icon {
@@ -1884,7 +1884,7 @@
 .toast-text {
   flex-grow: 1;
   color: #f8fafc;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.4;
 }
 

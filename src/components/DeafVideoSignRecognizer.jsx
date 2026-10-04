@@ -352,7 +352,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
           </div>
         )}
 
-        {!hideControls && activeSign && (
+        {activeSign && (
           <div className={`deaf-active-sign-hud ${isGestureCharging ? 'charging' : 'confirmed'}`}>
             <div className="sign-hud-header">
               <Sparkles size={14} color={isGestureCharging ? '#93c5fd' : (engineMode === 'ml' ? '#1d72fe' : '#f59e0b')} />

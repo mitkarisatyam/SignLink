@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Sparkles, X } from 'lucide-react';
 
 export default function UpcomingSignModal({ word, onClose }) {
-  const [timeLeft, setTimeLeft] = useState(5);
+  const [timeLeft, setTimeLeft] = useState(3);
   const [isPaused, setIsPaused] = useState(false);
 
   // Auto-dismiss countdown
@@ -19,7 +19,7 @@ export default function UpcomingSignModal({ word, onClose }) {
   }, [timeLeft, isPaused, onClose]);
 
   const upperWord = (word || 'NEW SIGN').toUpperCase();
-  const progressPercent = ((5 - timeLeft) / 5) * 100;
+  const progressPercent = ((3 - timeLeft) / 3) * 100;
 
   return (
     <div
