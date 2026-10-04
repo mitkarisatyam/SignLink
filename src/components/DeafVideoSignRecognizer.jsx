@@ -78,6 +78,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
   // Handle triggered word - strictly ONCE per gesture
   const handleTriggerWord = useCallback((word, conf) => {
     if (!word || word === 'NO_SIGN') return;
+    if (conf <= 85) return;
 
     const now = Date.now();
     // Guard: Do sign only ONCE per gesture.
@@ -334,6 +335,29 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
 
   return (
     <div className="deaf-recognizer-container">
+      {activeSign && (
+        <div className={`deaf-active-sign-hud ${isGestureCharging ? 'charging' : 'confirmed'}`}>
+          <div className="sign-hud-header">
+            <Sparkles size={14} color={isGestureCharging ? '#93c5fd' : (engineMode === 'ml' ? '#1d72fe' : '#f59e0b')} />
+            <span>{isGestureCharging ? 'ACTION IN PROGRESS' : (engineMode === 'ml' ? 'ML SIGN RECOGNIZED (GRU v2)' : 'HEURISTIC SIGN RECOGNIZED')}</span>
+          </div>
+          <div className="sign-hud-word">{activeSign}</div>
+          <div className="sign-hud-confidence">
+            <span>{isGestureCharging ? `Completing Gesture: ${gestureProgress}%` : `Confidence: ${confidenceScore}%`}</span>
+            <div className="hud-bar-track">
+              <div
+                className="hud-bar-fill"
+                style={{
+                  width: `${isGestureCharging ? gestureProgress : confidenceScore}%`,
+                  background: isGestureCharging
+                    ? 'linear-gradient(90deg, #3b82f6, #1d72fe)'
+                    : (engineMode === 'ml' ? 'linear-gradient(90deg, #1d72fe, #10b981)' : 'linear-gradient(90deg, #f59e0b, #10b981)')
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       {/* Video & Landmark Canvas */}
       <div className="deaf-video-viewport">
         <video
@@ -349,30 +373,6 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
           <div className="deaf-loading-scrim">
             <Sparkles size={24} className="spin-icon" color="#1d72fe" />
             <span>Loading MediaPipe AI Sign Recognizer...</span>
-          </div>
-        )}
-
-        {activeSign && (
-          <div className={`deaf-active-sign-hud ${isGestureCharging ? 'charging' : 'confirmed'}`}>
-            <div className="sign-hud-header">
-              <Sparkles size={14} color={isGestureCharging ? '#93c5fd' : (engineMode === 'ml' ? '#1d72fe' : '#f59e0b')} />
-              <span>{isGestureCharging ? 'ACTION IN PROGRESS' : (engineMode === 'ml' ? 'ML SIGN RECOGNIZED (GRU v2)' : 'HEURISTIC SIGN RECOGNIZED')}</span>
-            </div>
-            <div className="sign-hud-word">{activeSign}</div>
-            <div className="sign-hud-confidence">
-              <span>{isGestureCharging ? `Completing Gesture: ${gestureProgress}%` : `Confidence: ${confidenceScore}%`}</span>
-              <div className="hud-bar-track">
-                <div
-                  className="hud-bar-fill"
-                  style={{
-                    width: `${isGestureCharging ? gestureProgress : confidenceScore}%`,
-                    background: isGestureCharging
-                      ? 'linear-gradient(90deg, #3b82f6, #1d72fe)'
-                      : (engineMode === 'ml' ? 'linear-gradient(90deg, #1d72fe, #10b981)' : 'linear-gradient(90deg, #f59e0b, #10b981)')
-                  }}
-                />
-              </div>
-            </div>
           </div>
         )}
 

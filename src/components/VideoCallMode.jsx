@@ -1396,15 +1396,10 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                       <span style={{ fontSize: '12px', color: speechStatus.includes('Error') ? '#ef4444' : '#94a3b8', marginBottom: '4px' }}>
                         {speechStatus}
                       </span>
-                      <div style={{ wordBreak: 'break-word', overflowY: 'auto', textAlign: 'left', width: '100%' }}>
-                        {liveSpeechHistory && (
-                          <div style={{ whiteSpace: 'pre-line', color: '#cbd5e1', marginBottom: '5px' }}>
-                            {liveSpeechHistory}
-                          </div>
-                        )}
-                        <i style={{ color: '#a78bfa' }}>
-                          {liveSpeechText || (liveSpeechHistory ? '' : 'Say a supported word (e.g. Home, Come, Go)')}
-                        </i>
+                      <div style={{ wordBreak: 'break-word', textAlign: 'center', width: '100%' }}>
+                        <span style={{ color: '#a78bfa', fontSize: '18px', fontWeight: 'bold' }}>
+                          {liveSpeechText || (liveSpeechHistory ? liveSpeechHistory.trim().split('\n').pop() : 'Say a supported word')}
+                        </span>
                       </div>
                     </div>
                   </DraggableWindow>
