@@ -251,7 +251,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       lastMatchesRef.current = [];
 
       recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       recognition.lang = navigator.language || 'en-US';
@@ -310,7 +310,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         if (event.error !== 'no-speech') {
           console.warn('[SPEECH] Recognition error:', event.error);
           setSpeechStatus(`Error: ${event.error}`);
-          if (['not-allowed', 'audio-capture', 'network'].includes(event.error)) {
+          if (['not-allowed', 'audio-capture'].includes(event.error)) {
             hasFatalError = true;
           }
         }
