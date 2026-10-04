@@ -720,7 +720,8 @@
   height: 100%;
   position: relative;
   background-color: #12151a;
-  overflow: hidden;
+  overflow: visible;
+  border-radius: inherit;
 }
 
 .deaf-video-viewport {
@@ -733,6 +734,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  border-radius: inherit;
 }
 
 .deaf-webcam-feed {
@@ -784,13 +786,19 @@
 
 /* Live Detected Sign HUD */
 .deaf-active-sign-hud {
-  position: relative;
-  background: rgba(15, 23, 42, 1);
-  border-bottom: 1px solid rgba(0, 229, 255, 0.4);
+  position: absolute;
+  bottom: calc(100% + 40px); /* Float above the title bar */
+  left: 0;
+  width: 100%;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 229, 255, 0.25);
   padding: 10px 16px;
-  z-index: 4;
+  z-index: 999;
   flex-shrink: 0;
   animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 @keyframes popIn {

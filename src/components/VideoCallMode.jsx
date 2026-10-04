@@ -97,7 +97,7 @@ const DraggableWindow = ({ title, defaultRect, isVisible, onClose, children }) =
     <div style={{
       position: 'absolute', left: rect.x, top: rect.y, width: rect.width, height: rect.height,
       backgroundColor: 'rgba(20,20,30,0.85)', border: '1px solid rgba(255,255,255,0.2)',
-      borderRadius: '12px', overflow: 'hidden', zIndex: 50, display: 'flex', flexDirection: 'column',
+      borderRadius: '12px', overflow: 'visible', zIndex: 50, display: 'flex', flexDirection: 'column',
       backdropFilter: 'blur(10px)'
     }}>
       <div 
@@ -111,7 +111,7 @@ const DraggableWindow = ({ title, defaultRect, isVisible, onClose, children }) =
           </button>
         )}
       </div>
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flex: 1, position: 'relative', overflow: 'visible', borderRadius: '0 0 12px 12px' }}>
         {children}
       </div>
       <div 
