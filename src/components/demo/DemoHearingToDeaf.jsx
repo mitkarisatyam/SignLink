@@ -214,168 +214,166 @@ export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggl
     }
 
     setSpeechSupported(true);
-    const recognition = new SpeechRecognition();
-    // continuous: false prevents Google cloud socket drop on deployed HTTPS (Vercel)
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 5;
-    recognition.lang = demoLanguage === 'hi' ? 'hi-IN' : (navigator.language || 'en-US');
 
-    recognition.onstart = () => {
-      if (isMountedRef.current) {
-        setIsListeningSpeech(true);
-      }
-    };
-
-    recognition.onresult = (event) => {
-      if (!isMountedRef.current) return;
-
-      const results = event.results;
-      const resultIndex = event.resultIndex !== undefined ? event.resultIndex : results.length - 1;
-      
-      if (resultIndex !== lastResultIndexRef.current) {
-        lastMatchesRef.current = [];
-        lastResultIndexRef.current = resultIndex;
-      }
-
-      const currentResult = results[resultIndex] || results[results.length - 1];
-      if (!currentResult) return;
-
-      // Extract all alternatives
-      const alternatives = [];
-      for (let i = 0; i < currentResult.length; i++) {
-        const text = currentResult[i].transcript.trim();
-        if (text) alternatives.push(text);
-      }
-      if (alternatives.length === 0) return;
-
-      const rawSpoken = alternatives[0];
-      setLiveSpeechText(rawSpoken);
-
-      // Check for sequential signs in the recognized sentence
-      let matchedSigns = [];
-      const isHindi = demoLanguage === 'hi';
-      for (const alt of alternatives) {
-        const seq = matchSpeechToConceptSequence(alt, isHindi);
-        if (seq.length > 0) {
-          matchedSigns = seq;
-          break;
-        }
-      }
-
-      let divergeIndex = 0;
-      const prevMatches = lastMatchesRef.current;
-      while (divergeIndex < prevMatches.length && divergeIndex < matchedSigns.length && prevMatches[divergeIndex] === matchedSigns[divergeIndex]) {
-        divergeIndex++;
-      }
-      const newSigns = matchedSigns.slice(divergeIndex);
-
-      if (newSigns.length > 0) {
-        lastRecognizedTimeRef.current = Date.now();
-        const fullSequenceLabels = formatConceptSequence(matchedSigns, isHindi, ' • ');
-        setLiveSpeechText(rawSpoken || fullSequenceLabels);
-        setLastSpokenWord(fullSequenceLabels);
-        setHasSpoken(true);
-
-        if (avatarRef.current && avatarRef.current.isCurrentlyPlaying && avatarRef.current.isCurrentlyPlaying()) {
-          signQueueRef.current.push(...newSigns);
-        } else {
-          const first = newSigns.shift();
-          signQueueRef.current = newSigns;
-          handleTriggerWord(first, true);
-        }
-      }
-      lastMatchesRef.current = matchedSigns;
-
-      // If NOT matched and speech is finalized (user paused/finished utterance)
-      if (currentResult.isFinal) {
-        
-        // If the utterance contained any supported signs, don't show the unsupported modal
-        // (even if we already processed them in interim results)
-        if (matchedSigns.length > 0) return;
-
-        const timeSinceMatched = Date.now() - lastRecognizedTimeRef.current;
-        // Avoid popping modal on trailing audio fragments if a sign was just triggered within 1.2s
-        if (timeSinceMatched < 1200) return;
-
-        handleUnsupportedWordSpoken(rawSpoken);
-      }
-    };
-
-    recognition.onerror = (e) => {
-      console.warn('[SPEECH] Recognition error:', e.error);
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        if (isMountedRef.current) {
-          setIsListeningSpeech(false);
-        }
-      }
-    };
-
-    recognition.onend = () => {
-      if (!isMountedRef.current) return;
+    if (!micActive) {
       setIsListeningSpeech(false);
+      return;
+    }
 
-      // Robust auto-restart loop using micActiveRef
-      if (micActiveRef.current) {
-        clearTimeout(restartTimerRef.current);
-        restartTimerRef.current = setTimeout(() => {
-          if (isMountedRef.current && micActiveRef.current && recognitionRef.current) {
-            try {
-              recognitionRef.current.start();
-              setIsListeningSpeech(true);
-            } catch (err) {
-              // Browser may report InvalidStateError if already restarting; safe to ignore
-            }
-          }
-        }, 150);
+    let recognition = null;
+    let shouldListen = true;
+    let restartTimer = null;
+
+    const startRecognitionInstance = () => {
+      if (!isMountedRef.current || !shouldListen) return;
+
+      lastResultIndexRef.current = -1;
+      lastMatchesRef.current = [];
+
+      try {
+        recognition = new SpeechRecognition();
+      } catch (e) {
+        return;
       }
-    };
 
-    recognitionRef.current = recognition;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 5;
+      recognition.lang = demoLanguage === 'hi' ? 'hi-IN' : (navigator.language || 'en-US');
 
-    if (micActive) {
+      recognition.onstart = () => {
+        if (isMountedRef.current) {
+          setIsListeningSpeech(true);
+        }
+      };
+
+      recognition.onresult = (event) => {
+        if (!isMountedRef.current) return;
+
+        const results = event.results;
+        const resultIndex = event.resultIndex !== undefined ? event.resultIndex : results.length - 1;
+        
+        if (resultIndex !== lastResultIndexRef.current) {
+          lastMatchesRef.current = [];
+          lastResultIndexRef.current = resultIndex;
+        }
+
+        const currentResult = results[resultIndex] || results[results.length - 1];
+        if (!currentResult) return;
+
+        // Extract all alternatives
+        const alternatives = [];
+        for (let i = 0; i < currentResult.length; i++) {
+          const text = currentResult[i].transcript.trim();
+          if (text) alternatives.push(text);
+        }
+        if (alternatives.length === 0) return;
+
+        const rawSpoken = alternatives[0];
+        setLiveSpeechText(rawSpoken);
+
+        // Check for sequential signs in the recognized sentence
+        let matchedSigns = [];
+        const isHindi = demoLanguage === 'hi';
+        for (const alt of alternatives) {
+          const seq = matchSpeechToConceptSequence(alt, isHindi);
+          if (seq.length > 0) {
+            matchedSigns = seq;
+            break;
+          }
+        }
+
+        let divergeIndex = 0;
+        const prevMatches = lastMatchesRef.current;
+        while (divergeIndex < prevMatches.length && divergeIndex < matchedSigns.length && prevMatches[divergeIndex] === matchedSigns[divergeIndex]) {
+          divergeIndex++;
+        }
+        const newSigns = matchedSigns.slice(divergeIndex);
+
+        if (newSigns.length > 0) {
+          lastRecognizedTimeRef.current = Date.now();
+          const fullSequenceLabels = formatConceptSequence(matchedSigns, isHindi, ' • ');
+          setLiveSpeechText(rawSpoken || fullSequenceLabels);
+          setLastSpokenWord(fullSequenceLabels);
+          setHasSpoken(true);
+
+          if (avatarRef.current && avatarRef.current.isCurrentlyPlaying && avatarRef.current.isCurrentlyPlaying()) {
+            signQueueRef.current.push(...newSigns);
+          } else {
+            const first = newSigns.shift();
+            signQueueRef.current = newSigns;
+            handleTriggerWord(first, true);
+          }
+        }
+        lastMatchesRef.current = matchedSigns;
+
+        // If NOT matched and speech is finalized (user paused/finished utterance)
+        if (currentResult.isFinal) {
+          if (matchedSigns.length > 0) return;
+
+          const timeSinceMatched = Date.now() - lastRecognizedTimeRef.current;
+          if (timeSinceMatched < 1200) return;
+
+          handleUnsupportedWordSpoken(rawSpoken);
+        }
+      };
+
+      recognition.onerror = (e) => {
+        console.warn('[SPEECH] Recognition error:', e.error);
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          shouldListen = false;
+          if (isMountedRef.current) {
+            setIsListeningSpeech(false);
+          }
+        }
+      };
+
+      recognition.onend = () => {
+        if (!isMountedRef.current || !shouldListen) return;
+        setIsListeningSpeech(false);
+
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (isMountedRef.current && shouldListen) {
+            startRecognitionInstance();
+          }
+        }, 250);
+      };
+
+      recognitionRef.current = recognition;
+
       try {
         recognition.start();
-        setIsListeningSpeech(true);
+        if (isMountedRef.current) {
+          setIsListeningSpeech(true);
+        }
       } catch (err) {
-        console.warn('[SPEECH] Start error:', err);
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (isMountedRef.current && shouldListen) {
+            startRecognitionInstance();
+          }
+        }, 350);
       }
-    }
+    };
+
+    startRecognitionInstance();
 
     return () => {
       isMountedRef.current = false;
-      clearTimeout(restartTimerRef.current);
-      if (recognitionRef.current) {
+      shouldListen = false;
+      clearTimeout(restartTimer);
+      if (recognition) {
         try {
-          recognitionRef.current.abort();
+          recognition.abort();
         } catch {}
-        recognitionRef.current = null;
       }
     };
-  }, [handleTriggerWord, handleUnsupportedWordSpoken, demoLanguage]);
+  }, [handleTriggerWord, handleUnsupportedWordSpoken, demoLanguage, micActive]);
 
   // Toggle mic
   const toggleMic = () => {
-    const next = !micActive;
-    setMicActive(next);
-    micActiveRef.current = next;
-
-    if (!next) {
-      clearTimeout(restartTimerRef.current);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-      }
-      setIsListeningSpeech(false);
-    } else {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-          setIsListeningSpeech(true);
-        } catch {}
-      }
-    }
+    setMicActive(prev => !prev);
   };
 
   // Speed change

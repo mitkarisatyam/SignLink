@@ -408,7 +408,12 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
   // Web Speech API for Hearing Person (Multilingual Hindi/English + Multi-Word Sequential Queue)
   useEffect(() => {
-    if (userRole !== 'hearing') return;
+    if (userRole !== 'hearing' || !inCall || !micActive) {
+      if (userRole === 'hearing' && inCall && !micActive) {
+        setSpeechStatus('🔇 Microphone muted');
+      }
+      return;
+    }
     
     isMountedRef.current = true;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -418,11 +423,11 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     }
     
     let recognition = null;
-    let hasFatalError = false;
-    let retryDelay = 250;
+    let shouldListen = true;
+    let restartTimer = null;
 
     const startRecognition = () => {
-      if (!isMountedRef.current || hasFatalError) return;
+      if (!isMountedRef.current || !shouldListen) return;
 
       // Reset tracking refs for the new instance
       lastResultIndexRef.current = -1;
@@ -435,10 +440,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         return;
       }
 
-      // CRITICAL FOR DEPLOYED HOSTS (Vercel):
-      // continuous: false prevents Google cloud speech recognition socket drops / timeouts.
-      // onend restarts it immediately (200ms) for an uninterrupted live dictation loop.
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 5;
       recognition.lang = callLanguage === 'hi' ? 'hi-IN' : 'en-US';
@@ -446,7 +448,6 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       recognition.onstart = () => {
         if (!isMountedRef.current) return;
         setSpeechStatus(callLanguage === 'hi' ? '🎙️ सुन रहे हैं (हिंदी)' : '🎙️ Listening (English)');
-        retryDelay = 200;
       };
 
       recognition.onresult = (event) => {
@@ -534,51 +535,48 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         console.warn('[SPEECH] Recognition error:', err);
 
         if (err === 'no-speech' || err === 'aborted') {
-          // Normal silence or browser utterance cutoff; continue listening smoothly
           return;
         }
 
         if (err === 'network') {
-          // Cloud endpoint stream reset on Vercel: silently re-arm with low latency
           setSpeechStatus(callLanguage === 'hi' ? '🎙️ पुनः कनेक्ट हो रहा है...' : '🎙️ Reconnecting speech...');
-          retryDelay = 200;
           return;
         }
 
         if (err === 'not-allowed' || err === 'service-not-allowed') {
-          hasFatalError = true;
-          setSpeechStatus('⚠️ Microphone access blocked. Please allow mic in browser address bar.');
+          setSpeechStatus('⚠️ Microphone permission blocked. Allow in browser address bar.');
           return;
         }
 
         if (err === 'audio-capture') {
-          hasFatalError = true;
           setSpeechStatus('⚠️ No microphone hardware found.');
           return;
         }
 
-        // Other non-fatal errors
         setSpeechStatus(callLanguage === 'hi' ? '🎙️ सुन रहे हैं (हिंदी)' : '🎙️ Listening (English)');
       };
 
       recognition.onend = () => {
-        if (hasFatalError || !isMountedRef.current) return;
+        if (!isMountedRef.current || !shouldListen) return;
         
-        // Cleanly cycle to next utterance without hitting Google socket timeout
-        setTimeout(() => {
-          startRecognition();
-        }, retryDelay);
+        // Cleanly recreate a new instance on session end
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (isMountedRef.current && shouldListen) {
+            startRecognition();
+          }
+        }, 250);
       };
 
       try {
         recognition.start();
       } catch (e) {
-        // Handle immediate browser state race
-        setTimeout(() => {
-          if (isMountedRef.current && !hasFatalError) {
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (isMountedRef.current && shouldListen) {
             startRecognition();
           }
-        }, 300);
+        }, 350);
       }
     };
 
@@ -586,12 +584,13 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
     return () => {
       isMountedRef.current = false;
-      hasFatalError = true; // Stop loop
+      shouldListen = false;
+      clearTimeout(restartTimer);
       if (recognition) {
-        try { recognition.stop(); } catch (e) {}
+        try { recognition.abort(); } catch (e) {}
       }
     };
-  }, [userRole, callLanguage]);
+  }, [userRole, inCall, micActive, callLanguage]);
 
   // Duration Timer
   useEffect(() => {
@@ -1592,7 +1591,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                         ref={handleRemoteVideoRef}
                         autoPlay
                         playsInline
-                        muted={true}
+                        muted={false}
                         style={{ width: '100%', height: '100%', objectFit: signingFirstMode ? 'contain' : 'cover' }}
                       />
                       
@@ -1871,7 +1870,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                    isVisible={true}
                  >
                    <video
-                     autoPlay playsInline muted
+                     autoPlay playsInline
                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                      ref={node => { if (node && remoteStreamRef.current && node.srcObject !== remoteStreamRef.current) node.srcObject = remoteStreamRef.current; }}
                    />
