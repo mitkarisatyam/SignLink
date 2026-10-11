@@ -223,6 +223,8 @@ export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggl
     let recognition = null;
     let shouldListen = true;
     let restartTimer = null;
+    let consecutiveErrors = 0;
+    let nextRestartDelay = 1200;
 
     const startRecognitionInstance = () => {
       if (!isMountedRef.current || !shouldListen) return;
@@ -245,9 +247,12 @@ export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggl
         if (isMountedRef.current) {
           setIsListeningSpeech(true);
         }
+        nextRestartDelay = 1200;
       };
 
       recognition.onresult = (event) => {
+        consecutiveErrors = 0;
+        nextRestartDelay = 1000;
         if (!isMountedRef.current) return;
 
         const results = event.results;
@@ -325,6 +330,21 @@ export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggl
           if (isMountedRef.current) {
             setIsListeningSpeech(false);
           }
+          return;
+        }
+
+        if (e.error === 'no-speech' || e.error === 'aborted') {
+          nextRestartDelay = 1500;
+          return;
+        }
+
+        consecutiveErrors++;
+        nextRestartDelay = Math.min(2000 * Math.pow(1.8, consecutiveErrors - 1), 10000);
+        if (consecutiveErrors >= 3) {
+          shouldListen = false;
+          if (isMountedRef.current) {
+            setIsListeningSpeech(false);
+          }
         }
       };
 
@@ -337,7 +357,7 @@ export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggl
           if (isMountedRef.current && shouldListen) {
             startRecognitionInstance();
           }
-        }, 250);
+        }, nextRestartDelay);
       };
 
       recognitionRef.current = recognition;
@@ -353,7 +373,7 @@ export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggl
           if (isMountedRef.current && shouldListen) {
             startRecognitionInstance();
           }
-        }, 350);
+        }, 1500);
       }
     };
 

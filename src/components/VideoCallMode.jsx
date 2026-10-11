@@ -425,6 +425,8 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
     let recognition = null;
     let shouldListen = true;
     let restartTimer = null;
+    let consecutiveErrors = 0;
+    let nextRestartDelay = 1200;
 
     const startRecognition = () => {
       if (!isMountedRef.current || !shouldListen) return;
@@ -448,9 +450,12 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       recognition.onstart = () => {
         if (!isMountedRef.current) return;
         setSpeechStatus(callLanguage === 'hi' ? '🎙️ सुन रहे हैं (हिंदी)' : '🎙️ Listening (English)');
+        nextRestartDelay = 1200;
       };
 
       recognition.onresult = (event) => {
+        consecutiveErrors = 0; // Successful speech resets error tally
+        nextRestartDelay = 1000;
         if (!isMountedRef.current) return;
         const results = event.results;
         const resultIndex = event.resultIndex !== undefined ? event.resultIndex : results.length - 1;
@@ -535,37 +540,55 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
         console.warn('[SPEECH] Recognition error:', err);
 
         if (err === 'no-speech' || err === 'aborted') {
+          // Normal silence pause: wait comfortably (1.5s) to avoid OS mic indicator flicker
+          nextRestartDelay = 1500;
           return;
         }
 
         if (err === 'network') {
+          consecutiveErrors++;
+          // Exponential backoff to avoid hammering Google cloud speech servers
+          nextRestartDelay = Math.min(2000 * Math.pow(1.8, consecutiveErrors - 1), 10000);
+          
+          if (consecutiveErrors >= 3) {
+            // Circuit breaker: halt auto-loop and prompt user
+            shouldListen = false;
+            setSpeechStatus(callLanguage === 'hi' 
+              ? '⚠️ वाणी नेटवर्क अनुपलब्ध — पुनः प्रयास हेतु माइक टॉगल करें' 
+              : '⚠️ Speech network unavailable — toggle mic to retry');
+            return;
+          }
           setSpeechStatus(callLanguage === 'hi' ? '🎙️ पुनः कनेक्ट हो रहा है...' : '🎙️ Reconnecting speech...');
           return;
         }
 
         if (err === 'not-allowed' || err === 'service-not-allowed') {
+          shouldListen = false;
           setSpeechStatus('⚠️ Microphone permission blocked. Allow in browser address bar.');
           return;
         }
 
         if (err === 'audio-capture') {
+          shouldListen = false;
           setSpeechStatus('⚠️ No microphone hardware found.');
           return;
         }
 
+        consecutiveErrors++;
+        nextRestartDelay = 2500;
         setSpeechStatus(callLanguage === 'hi' ? '🎙️ सुन रहे हैं (हिंदी)' : '🎙️ Listening (English)');
       };
 
       recognition.onend = () => {
         if (!isMountedRef.current || !shouldListen) return;
         
-        // Cleanly recreate a new instance on session end
+        // Cleanly recreate a new instance after non-flicker delay
         clearTimeout(restartTimer);
         restartTimer = setTimeout(() => {
           if (isMountedRef.current && shouldListen) {
             startRecognition();
           }
-        }, 250);
+        }, nextRestartDelay);
       };
 
       try {
@@ -576,7 +599,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
           if (isMountedRef.current && shouldListen) {
             startRecognition();
           }
-        }, 350);
+        }, 1500);
       }
     };
 
