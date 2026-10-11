@@ -21,13 +21,14 @@ import {
 } from 'lucide-react';
 import './DemoMode.css';
 import {
-  UPCOMING_ROADMAP_SIGNS,
-  SIGN_DICTIONARY,
-  matchSignFromSpeech,
-  matchAllSignsFromSpeech
-} from '../../utils/speechDictionary';
+  matchSpeechToConceptId,
+  matchSpeechToConceptSequence,
+  formatConceptSequence,
+  getLabelForConcept,
+  DEMO_VOCABULARY
+} from '../../utils/demoLanguageMappings';
 
-export default function DemoHearingToDeaf({ onBack }) {
+export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggleLanguage }) {
   const avatarRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -63,6 +64,24 @@ export default function DemoHearingToDeaf({ onBack }) {
   useEffect(() => {
     micActiveRef.current = micActive;
   }, [micActive]);
+
+  // When demoLanguage changes, instantly update subtitles to the new language
+  const prevLangHearingRef = useRef(demoLanguage);
+  useEffect(() => {
+    if (prevLangHearingRef.current !== demoLanguage) {
+      prevLangHearingRef.current = demoLanguage;
+      const isHindi = demoLanguage === 'hi';
+      if (lastMatchesRef.current && lastMatchesRef.current.length > 0) {
+        const sequenceDisplay = formatConceptSequence(lastMatchesRef.current, isHindi, ' • ');
+        setLastSpokenWord(sequenceDisplay);
+        setLiveSpeechText(sequenceDisplay);
+      } else if (selectedWord) {
+        const single = getLabelForConcept(selectedWord, isHindi);
+        setLastSpokenWord(single);
+        setLiveSpeechText(single);
+      }
+    }
+  }, [demoLanguage, selectedWord]);
 
   // Clock
   useEffect(() => {
@@ -123,30 +142,33 @@ export default function DemoHearingToDeaf({ onBack }) {
   }, [camActive]);
 
   // 2. Play sign on avatar - analyzed in 1 attempt
-  const handleTriggerWord = useCallback((wordId) => {
+  const handleTriggerWord = useCallback((wordId, preserveLiveText = false) => {
     const upper = wordId.toUpperCase();
     const now = Date.now();
 
     lastTriggerTimeRef.current = now;
     lastTriggeredWordRef.current = upper;
     setSelectedWord(upper);
-    setLastSpokenWord(upper);
-    setLiveSpeechText(upper);
+    const label = getLabelForConcept(upper, demoLanguage === 'hi');
+    if (!preserveLiveText) {
+      setLastSpokenWord(label);
+      setLiveSpeechText(label);
+    }
     setHasSpoken(true);
 
     if (avatarRef.current) {
       avatarRef.current.playSign(upper);
     }
-  }, []);
+  }, [demoLanguage]);
 
-  // Synchronize animation state
+  // Synchronize animation state - plays queued signs in sequence
   const handleAnimationStateChange = useCallback((playing, word) => {
     setIsPlaying(playing);
     if (!playing) {
       console.log(`[DEMO HEARING] Avatar finished sign "${word}". Ready for next sign.`);
       if (signQueueRef.current && signQueueRef.current.length > 0) {
         const nextSign = signQueueRef.current.shift();
-        handleTriggerWord(nextSign);
+        handleTriggerWord(nextSign, true);
       }
     }
   }, [handleTriggerWord]);
@@ -177,14 +199,9 @@ export default function DemoHearingToDeaf({ onBack }) {
     if (!displayWord || displayWord.length < 2) return;
 
     lastModalTimeRef.current = now;
-    setUpcomingModalData({
-      word: displayWord,
-      category: 'User Spoken Word',
-      description: null
-    });
-    setLastSpokenWord(displayWord);
-    setHasSpoken(true);
-  }, []);
+    setLiveSpeechText(demoLanguage === 'hi' ? "यह शब्द अभी समर्थित नहीं है।" : "This word is not supported yet.");
+    setHasSpoken(false);
+  }, [demoLanguage]);
 
 
   // 4. Web Speech Recognition Lifecycle
@@ -201,7 +218,7 @@ export default function DemoHearingToDeaf({ onBack }) {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 5;
-    recognition.lang = navigator.language || 'en-US';
+    recognition.lang = demoLanguage === 'hi' ? 'hi-IN' : (navigator.language || 'en-US');
 
     recognition.onstart = () => {
       if (isMountedRef.current) {
@@ -236,10 +253,11 @@ export default function DemoHearingToDeaf({ onBack }) {
 
       // Check for sequential signs in the recognized sentence
       let matchedSigns = [];
+      const isHindi = demoLanguage === 'hi';
       for (const alt of alternatives) {
-        const matches = matchAllSignsFromSpeech(alt);
-        if (matches && matches.length > 0) {
-          matchedSigns = matches;
+        const seq = matchSpeechToConceptSequence(alt, isHindi);
+        if (seq.length > 0) {
+          matchedSigns = seq;
           break;
         }
       }
@@ -253,14 +271,17 @@ export default function DemoHearingToDeaf({ onBack }) {
 
       if (newSigns.length > 0) {
         lastRecognizedTimeRef.current = Date.now();
-        setLiveSpeechText(matchedSigns.join(' ')); 
+        const fullSequenceLabels = formatConceptSequence(matchedSigns, isHindi, ' • ');
+        setLiveSpeechText(rawSpoken || fullSequenceLabels);
+        setLastSpokenWord(fullSequenceLabels);
+        setHasSpoken(true);
 
         if (avatarRef.current && avatarRef.current.isCurrentlyPlaying && avatarRef.current.isCurrentlyPlaying()) {
           signQueueRef.current.push(...newSigns);
         } else {
           const first = newSigns.shift();
           signQueueRef.current = newSigns;
-          handleTriggerWord(first);
+          handleTriggerWord(first, true);
         }
       }
       lastMatchesRef.current = matchedSigns;
@@ -330,7 +351,7 @@ export default function DemoHearingToDeaf({ onBack }) {
         recognitionRef.current = null;
       }
     };
-  }, [handleTriggerWord, handleUnsupportedWordSpoken]);
+  }, [handleTriggerWord, handleUnsupportedWordSpoken, demoLanguage]);
 
   // Toggle mic
   const toggleMic = () => {
@@ -369,24 +390,44 @@ export default function DemoHearingToDeaf({ onBack }) {
       {/* Header */}
       <header className="demo-call-header">
         <div className="header-left">
-          <button onClick={onBack} className="demo-call-back-btn" title="Back to Demo Selection">
+          <button 
+            onClick={onBack} 
+            className="demo-call-back-btn" 
+            title={demoLanguage === 'hi' ? 'डेमो चयन पर वापस जाएं' : 'Back to Demo Selection'}
+          >
             <ArrowLeft size={16} />
-            <span>Back</span>
+            <span>{demoLanguage === 'hi' ? 'वापस' : 'Back'}</span>
           </button>
           <div className="header-brand-group">
             <div className="badge-mini">SL</div>
             <span className="brand-text">SIGNLINK Demo</span>
             <span className="pipeline-indicator-pill hearing-pill">
-              Pipeline A: Hearing → Deaf
+              {demoLanguage === 'hi' ? 'पाइपलाइन: श्रवण → बधिर' : 'Pipeline A: Hearing → Deaf'}
             </span>
           </div>
         </div>
 
-        <div className="header-center">
+        <div className="header-center" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div className="pipeline-flow-banner">
-            <span>Speech / Text</span>
+            <span>{demoLanguage === 'hi' ? 'वाणी / टेक्स्ट' : 'Speech / Text'}</span>
             <span className="arrow-sep">→</span>
-            <span className="highlight-tag">3D ISL Avatar</span>
+            <span className="highlight-tag">{demoLanguage === 'hi' ? '3D ISL अवतार' : '3D ISL Avatar'}</span>
+          </div>
+
+          {/* Language Toggle */}
+          <div className="demo-lang-toggle" style={{ display: 'flex', background: '#202124', border: '1px solid #3c4043', borderRadius: '20px', overflow: 'hidden', fontSize: '12px', fontWeight: 'bold' }}>
+            <button 
+              onClick={onToggleLanguage}
+              style={{ padding: '6px 12px', border: 'none', background: demoLanguage === 'en' ? '#8ab4f8' : 'transparent', color: demoLanguage === 'en' ? '#202124' : '#9aa0a6', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              ENGLISH
+            </button>
+            <button 
+              onClick={onToggleLanguage}
+              style={{ padding: '6px 12px', border: 'none', background: demoLanguage === 'hi' ? '#8ab4f8' : 'transparent', color: demoLanguage === 'hi' ? '#202124' : '#9aa0a6', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              हिन्दी
+            </button>
           </div>
         </div>
 
@@ -416,7 +457,7 @@ export default function DemoHearingToDeaf({ onBack }) {
                 <div className="avatar-placeholder-circle">
                   <User size={48} color="#9aa0a6" />
                 </div>
-                <span>Hearing Participant (Camera Off)</span>
+                <span>{demoLanguage === 'hi' ? 'श्रवण प्रतिभागी (कैमरा बंद)' : 'Hearing Participant (Camera Off)'}</span>
               </div>
             )}
 
@@ -429,7 +470,7 @@ export default function DemoHearingToDeaf({ onBack }) {
                   <span className="speech-interim-text">"{liveSpeechText}"</span>
                 )}
                 {!hasSpoken && !liveSpeechText && (
-                  <span className="speech-placeholder">Speak to translate...</span>
+                  <span className="speech-placeholder">{demoLanguage === 'hi' ? 'अनुवाद के लिए बोलें...' : 'Speak to translate...'}</span>
                 )}
               </div>
             </div>
@@ -437,7 +478,7 @@ export default function DemoHearingToDeaf({ onBack }) {
             {/* Bottom Tile Info */}
             <div className="tile-bottom-badge">
               <User size={14} color="#8ab4f8" />
-              <span>Hearing Participant</span>
+              <span>{demoLanguage === 'hi' ? 'श्रवण प्रतिभागी' : 'Hearing Participant'}</span>
               {!micActive && (
                 <span className="tile-mute-badge">
                   <MicOff size={11} color="#ea4335" />
@@ -454,20 +495,21 @@ export default function DemoHearingToDeaf({ onBack }) {
               ref={avatarRef}
               activeSign={selectedWord}
               onAnimationStateChange={handleAnimationStateChange}
+              demoLanguage={demoLanguage}
             />
 
             {/* Floating Live Animation Status */}
             <div className="avatar-live-status-hud">
               <div className="avatar-hud-pill">
                 <Bot size={13} color="#1d72fe" />
-                <span>Signing:</span>
-                <strong className="avatar-active-word">"{selectedWord}"</strong>
+                <span>{demoLanguage === 'hi' ? 'संकेत कर रहे हैं:' : 'Signing:'}</span>
+                <strong className="avatar-active-word">"{getLabelForConcept(selectedWord, demoLanguage === 'hi')}"</strong>
                 {isPlaying && <span className="animating-pulse" />}
               </div>
 
               {/* Speed Pills */}
               <div className="avatar-speed-pills">
-                <span style={{ fontSize: 11, color: '#9aa0a6' }}>Speed:</span>
+                <span style={{ fontSize: 11, color: '#9aa0a6' }}>{demoLanguage === 'hi' ? 'गति:' : 'Speed:'}</span>
                 {[1.0, 0.75, 0.5].map((spd) => (
                   <button
                     key={spd}
@@ -483,17 +525,17 @@ export default function DemoHearingToDeaf({ onBack }) {
               <button
                 className="reset-cam-btn"
                 onClick={() => avatarRef.current?.resetCamera()}
-                title="Center Avatar View"
+                title={demoLanguage === 'hi' ? 'अवतार दृश्य को केंद्रित करें' : 'Center Avatar View'}
               >
                 <RotateCcw size={12} />
-                <span>Center</span>
+                <span>{demoLanguage === 'hi' ? 'केंद्र' : 'Center'}</span>
               </button>
             </div>
 
             {/* Bottom Tile Info */}
             <div className="tile-bottom-badge avatar-badge">
               <Bot size={14} color="#1d72fe" />
-              <span>ISL 3D Robot Interpreter</span>
+              <span>{demoLanguage === 'hi' ? 'ISL 3D रोबोट दुभाषिया' : 'ISL 3D Robot Interpreter'}</span>
             </div>
           </div>
         </div>
@@ -506,7 +548,7 @@ export default function DemoHearingToDeaf({ onBack }) {
           <button
             className={`control-circle-btn ${!micActive ? 'disabled' : ''}`}
             onClick={toggleMic}
-            title={micActive ? 'Mute Microphone' : 'Unmute Microphone'}
+            title={demoLanguage === 'hi' ? (micActive ? 'माइक म्यूट करें' : 'माइक चालू करें') : (micActive ? 'Mute Microphone' : 'Unmute Microphone')}
           >
             {micActive ? <Mic size={20} /> : <MicOff size={20} color="#ea4335" />}
           </button>
@@ -515,7 +557,7 @@ export default function DemoHearingToDeaf({ onBack }) {
           <button
             className={`control-circle-btn ${!camActive ? 'disabled' : ''}`}
             onClick={() => setCamActive(!camActive)}
-            title={camActive ? 'Turn Off Video' : 'Turn On Video'}
+            title={demoLanguage === 'hi' ? (camActive ? 'कैमरा बंद करें' : 'कैमरा चालू करें') : (camActive ? 'Turn Off Video' : 'Turn On Video')}
           >
             {camActive ? <Video size={20} /> : <VideoOff size={20} color="#ea4335" />}
           </button>
@@ -525,15 +567,21 @@ export default function DemoHearingToDeaf({ onBack }) {
             <button
               className={`control-play-sign-btn ${isPlaying ? 'playing' : ''}`}
               onClick={() => setIsWordListExpanded(!isWordListExpanded)}
-              title="Show Available Signs"
+              title={demoLanguage === 'hi' ? 'उपलब्ध संकेत देखें' : 'Show Available Signs'}
             >
               <Sparkles size={16} />
-              <span>{isPlaying ? `Signing "${selectedWord}"...` : `Available Words`}</span>
+              <span>
+                {isPlaying 
+                  ? (demoLanguage === 'hi' ? `संकेत: "${getLabelForConcept(selectedWord, true)}"...` : `Signing "${getLabelForConcept(selectedWord, false)}"...`) 
+                  : (demoLanguage === 'hi' ? 'उपलब्ध शब्द' : 'Available Words')}
+              </span>
             </button>
             
             {isWordListExpanded && (
               <div className="available-words-dropdown">
-                <div className="dropdown-header">Select a word to sign:</div>
+                <div className="dropdown-header">
+                  {demoLanguage === 'hi' ? 'संकेत देखने के लिए शब्द चुनें:' : 'Select a word to sign:'}
+                </div>
                 <div className="dropdown-list">
                   {SUPPORTED_SIGNS.map((sign) => (
                     <button
@@ -544,7 +592,7 @@ export default function DemoHearingToDeaf({ onBack }) {
                         setIsWordListExpanded(false);
                       }}
                     >
-                      {sign.label}
+                      {getLabelForConcept(sign.id, demoLanguage === 'hi')}
                     </button>
                   ))}
                 </div>
@@ -556,7 +604,7 @@ export default function DemoHearingToDeaf({ onBack }) {
           <button
             className="control-circle-btn end-call-btn"
             onClick={onBack}
-            title="Leave Demo (Back to selection)"
+            title={demoLanguage === 'hi' ? 'डेमो से बाहर निकलें' : 'Leave Demo (Back to selection)'}
           >
             <PhoneOff size={20} />
           </button>
@@ -572,6 +620,7 @@ export default function DemoHearingToDeaf({ onBack }) {
           supportedSigns={SUPPORTED_SIGNS}
           onSelectSupportedSign={handleTriggerWord}
           onClose={() => setUpcomingModalData(null)}
+          demoLanguage={demoLanguage}
         />
       )}
 

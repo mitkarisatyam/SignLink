@@ -16,8 +16,9 @@ export const SUPPORTED_SIGNS = [
   { id: 'PERFECT', label: 'PERFECT', file: '/animations/perfect.fbx', desc: 'Two-handed precision OK touch' },
   { id: 'HE', label: 'HE', file: '/animations/he.fbx', desc: 'Third-person reference pointing sign' }
 ];
+import { getLabelForConcept } from '../utils/demoLanguageMappings';
 
-const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAnimationStateChange, onSignsLoaded }, ref) => {
+const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAnimationStateChange, onSignsLoaded, demoLanguage = 'en' }, ref) => {
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const mixerRef = useRef(null);
@@ -599,7 +600,9 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
       {!isLoaded && (
         <div className="avatar-loading-overlay">
           <div className="loading-spinner" />
-          <div className="loading-title">{loadingStep}</div>
+          <div className="loading-title">
+            {demoLanguage === 'hi' ? 'अवतार लोड हो रहा है...' : loadingStep}
+          </div>
           {loadProgress > 0 && (
             <div className="loading-bar-track">
               <div className="loading-bar-fill" style={{ width: `${loadProgress}%` }} />
@@ -612,9 +615,9 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
       {/* Top Left Badge: Avatar Info */}
       <div className="avatar-badge-top-left">
         <span className="live-dot" />
-        <span>SignLink • ISL Interpreter Avatar</span>
+        <span>{demoLanguage === 'hi' ? 'SignLink • ISL दुभाषिया अवतार' : 'SignLink • ISL Interpreter Avatar'}</span>
         {isLoaded && (
-          <span className="duration-pill">Ready</span>
+          <span className="duration-pill">{demoLanguage === 'hi' ? 'तैयार' : 'Ready'}</span>
         )}
       </div>
 
@@ -623,9 +626,9 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
         <button
           onClick={frameUpperBody}
           className="reset-view-btn"
-          title="Reset Camera to Upper Body View"
+          title={demoLanguage === 'hi' ? 'कैमरा दृश्य रीसेट करें' : 'Reset Camera to Upper Body View'}
         >
-          Reset View
+          {demoLanguage === 'hi' ? 'दृश्य रीसेट करें' : 'Reset View'}
         </button>
       </div>
 
@@ -633,7 +636,11 @@ const IslAvatarViewer = forwardRef(({ activeSign = 'COME', onStatusUpdate, onAni
       {isPlaying && (
         <div className="avatar-signing-banner">
           <span className="signing-dot" />
-          <span>SIGNING: "{currentWord}" (Complete Whole-Word Sign)</span>
+          <span>
+            {demoLanguage === 'hi'
+              ? `संकेत: "${getLabelForConcept(currentWord, true)}" (पूर्ण शब्द संकेत)`
+              : `SIGNING: "${getLabelForConcept(currentWord, false)}" (Complete Whole-Word Sign)`}
+          </span>
         </div>
       )}
     </div>

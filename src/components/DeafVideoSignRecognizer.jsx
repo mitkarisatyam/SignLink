@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { IslSignRecognizer } from '../utils/islSignClassifier';
 import { SUPPORTED_SIGNS } from './IslAvatarViewer';
@@ -23,12 +23,91 @@ const HAND_CONNECTIONS = [
   [0, 17]                                  // Palm base
 ];
 
-export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActive, ttsEnabled, mediaStream, hideControls = false, onCameraToggle, onTtsToggle }) {
+import { getLabelForConcept } from '../utils/demoLanguageMappings';
+
+/**
+ * Anatomical validator: strictly filters out false-positive hand detections
+ * on facial hair, lips, chin, or background artifacts.
+ */
+function isValidHandLandmarks(landmarks) {
+  if (!landmarks || landmarks.length !== 21) return false;
+
+  // 1. Calculate bounding box dimensions
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (let i = 0; i < 21; i++) {
+    const p = landmarks[i];
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const width = maxX - minX;
+  const height = maxY - minY;
+
+  // Real signing hands have reasonable bounds on webcam
+  if (width < 0.05 || height < 0.05 || width > 0.95 || height > 0.95) {
+    return false;
+  }
+
+  // 2. Palm Structure Validation
+  // Landmark 0: Wrist, 5: Index MCP, 9: Middle MCP, 17: Pinky MCP
+  const wrist = landmarks[0];
+  const indexMcp = landmarks[5];
+  const middleMcp = landmarks[9];
+  const pinkyMcp = landmarks[17];
+
+  const palmLength = Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
+  const palmWidth = Math.hypot(pinkyMcp.x - indexMcp.x, pinkyMcp.y - indexMcp.y);
+
+  // A genuine human palm cannot be degenerate or collapsed (like facial contours)
+  if (palmLength < 0.035 || palmWidth < 0.025) {
+    return false;
+  }
+
+  // Human hand palm aspect ratio check
+  const palmRatio = palmLength / Math.max(0.001, palmWidth);
+  if (palmRatio < 0.35 || palmRatio > 3.5) {
+    return false;
+  }
+
+  // 3. Finger Segment Length Plausibility
+  const midLen = Math.hypot(landmarks[10].x - landmarks[9].x, landmarks[10].y - landmarks[9].y) +
+                 Math.hypot(landmarks[11].x - landmarks[10].x, landmarks[11].y - landmarks[10].y) +
+                 Math.hypot(landmarks[12].x - landmarks[11].x, landmarks[12].y - landmarks[11].y);
+
+  const idxLen = Math.hypot(landmarks[6].x - landmarks[5].x, landmarks[6].y - landmarks[5].y) +
+                 Math.hypot(landmarks[7].x - landmarks[6].x, landmarks[7].y - landmarks[6].y) +
+                 Math.hypot(landmarks[8].x - landmarks[7].x, landmarks[8].y - landmarks[7].y);
+
+  if (midLen < 0.025 || idxLen < 0.025) {
+    return false;
+  }
+
+  // 4. Anti-Face Hallucination (Fingertips Alignment / Squashing)
+  // When hallucinated onto mouth/beard, all 5 fingertips align into a tight flat curve on the lips.
+  const tips = [landmarks[4], landmarks[8], landmarks[12], landmarks[16], landmarks[20]];
+  let maxTipSpread = 0;
+  for (let i = 0; i < tips.length; i++) {
+    for (let j = i + 1; j < tips.length; j++) {
+      const d = Math.hypot(tips[i].x - tips[j].x, tips[i].y - tips[j].y);
+      if (d > maxTipSpread) maxTipSpread = d;
+    }
+  }
+
+  // If fingertips are squeezed unnaturally close together (< 0.025) while the overall box is large
+  if (maxTipSpread < 0.025 && Math.max(width, height) > 0.12) {
+    return false;
+  }
+
+  return true;
+}
+
+const DeafVideoSignRecognizer = forwardRef(({ onSignRecognized, isCameraActive, ttsEnabled, mediaStream, hideControls = false, rejectionThreshold = 0.85, onCameraToggle, onTtsToggle, demoLanguage = 'en' }, ref) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const landmarkerRef = useRef(null);
-  const classifierRef = useRef(new IslSignRecognizer());
+  const classifierRef = useRef(new IslSignRecognizer({ rejectionThreshold }));
   const animFrameIdRef = useRef(null);
   const activeSignTimerRef = useRef(null);
 
@@ -43,7 +122,30 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
   const [isGestureCharging, setIsGestureCharging] = useState(false);
   const [isWordListExpanded, setIsWordListExpanded] = useState(false);
   const [engineMode, setEngineMode] = useState('ml');
+  const [diagnostics, setDiagnostics] = useState({ lighting: 'good', handsVisible: false });
   const toggleEngine = () => setEngineMode(e => e === 'ml' ? 'heuristic' : 'ml');
+  const frameCountRef = useRef(0);
+
+  useImperativeHandle(ref, () => ({
+    getCurrentSequence: () => {
+      if (classifierRef.current) {
+        return classifierRef.current.getCurrentSequence();
+      }
+      return null;
+    },
+    reloadPersonalizedProfile: async () => {
+      if (classifierRef.current) {
+        await classifierRef.current.reloadPersonalizedProfile();
+      }
+    },
+    getHandCount: () => handCount,
+    validateCandidateSign: (seq, targetSign, profile) => {
+      if (classifierRef.current) {
+        return classifierRef.current.validateCandidateSign(seq, targetSign, profile);
+      }
+      return { isValid: true };
+    }
+  }));
 
   // Clear timer on unmount
   useEffect(() => {
@@ -57,19 +159,29 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
     if (!ttsEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
 
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(word.toLowerCase());
+    const isHindi = demoLanguage === 'hi';
+    const textToSpeak = getLabelForConcept(word, isHindi);
+    if (!textToSpeak) return;
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.lang = isHindi ? 'hi-IN' : 'en-US';
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
-    // Select natural English voice if available
     const voices = window.speechSynthesis.getVoices();
-    const engVoice = voices.find((v) => v.lang.startsWith('en') && !v.name.includes('Google') && v.name.includes('Natural')) ||
-                     voices.find((v) => v.lang.startsWith('en'));
-    if (engVoice) utterance.voice = engVoice;
+    let voice = null;
+    if (isHindi) {
+      voice = voices.find((v) => v.lang.startsWith('hi') || (v.lang.includes('IN') && v.name.toLowerCase().includes('hindi'))) ||
+              voices.find((v) => v.lang.startsWith('hi'));
+    } else {
+      voice = voices.find((v) => v.lang.startsWith('en') && !v.name.includes('Google') && v.name.includes('Natural')) ||
+              voices.find((v) => v.lang.startsWith('en'));
+    }
+    if (voice) utterance.voice = voice;
 
     window.speechSynthesis.speak(utterance);
-  }, [ttsEnabled]);
+  }, [ttsEnabled, demoLanguage]);
 
   const lastTriggeredWordRef = useRef(null);
   const lastTriggerTimeRef = useRef(0);
@@ -78,7 +190,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
   // Handle triggered word - strictly ONCE per gesture
   const handleTriggerWord = useCallback((word, conf) => {
     if (!word || word === 'NO_SIGN') return;
-    if (conf <= 85) return;
+    if (conf < rejectionThreshold * 100) return;
 
     const now = Date.now();
     // Guard: Do sign only ONCE per gesture.
@@ -102,7 +214,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
 
     // Notify parent app
     if (onSignRecognized) {
-      onSignRecognized(word);
+      onSignRecognized(word, conf);
     }
 
     setRecentRecognitions((prev) => [
@@ -145,9 +257,9 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
           },
           runningMode: 'VIDEO',
           numHands: 2,
-          minHandDetectionConfidence: 0.15,
-          minHandPresenceConfidence: 0.15,
-          minTrackingConfidence: 0.15
+          minHandDetectionConfidence: 0.65,
+          minHandPresenceConfidence: 0.60,
+          minTrackingConfidence: 0.60
         });
 
         if (isCancelled) return;
@@ -165,9 +277,9 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
             },
             runningMode: 'VIDEO',
             numHands: 2,
-            minHandDetectionConfidence: 0.15,
-            minHandPresenceConfidence: 0.15,
-            minTrackingConfidence: 0.15
+            minHandDetectionConfidence: 0.65,
+            minHandPresenceConfidence: 0.60,
+            minTrackingConfidence: 0.60
           });
           if (!isCancelled) {
             landmarkerRef.current = handLandmarker;
@@ -251,6 +363,23 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
   useEffect(() => {
     let lastVideoTime = -1;
 
+    function checkLighting(ctx, width, height) {
+      if (width === 0 || height === 0) return 'good';
+      const sampleWidth = Math.min(100, width);
+      const sampleHeight = Math.min(100, height);
+      ctx.drawImage(videoRef.current, 0, 0, sampleWidth, sampleHeight);
+      const imageData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
+      let data = imageData.data;
+      let colorSum = 0;
+      
+      for (let x = 0, len = data.length; x < len; x += 4) {
+        colorSum += Math.floor((data[x] + data[x + 1] + data[x + 2]) / 3);
+      }
+      
+      const brightness = Math.floor(colorSum / (sampleWidth * sampleHeight));
+      return brightness < 50 ? 'poor' : 'good';
+    }
+
     function renderDetection() {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -267,14 +396,46 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
 
         if (landmarker && video.currentTime !== lastVideoTime) {
           lastVideoTime = video.currentTime;
+          frameCountRef.current++;
+          
+          if (frameCountRef.current % 15 === 0) {
+            const light = checkLighting(ctx, canvas.width, canvas.height);
+            setDiagnostics(prev => prev.lighting !== light ? { ...prev, lighting: light } : prev);
+          }
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
           const startTimeMs = performance.now();
           const results = landmarker.detectForVideo(video, startTimeMs);
 
-          if (results && results.landmarks && results.landmarks.length > 0) {
-            setHandCount(results.landmarks.length);
+          // Robust hand validation to prevent false detections on facial hair, lips, chin, or background
+          const handednessList = results?.handedness || results?.handednesses || [];
+          const rawLandmarks = results?.landmarks || [];
+          const validLandmarks = [];
 
-            // Draw Hand Landmarks
-            results.landmarks.forEach((landmarks) => {
+          for (let i = 0; i < rawLandmarks.length; i++) {
+            const lms = rawLandmarks[i];
+            const hInfo = handednessList[i]?.[0];
+            const hScore = hInfo ? hInfo.score : 1.0;
+
+            // Reject if handedness category confidence is low (< 60%)
+            if (hScore < 0.60) {
+              continue;
+            }
+
+            // Reject if landmarks fail human hand anatomical validation
+            if (!isValidHandLandmarks(lms)) {
+              continue;
+            }
+
+            validLandmarks.push(lms);
+          }
+
+          if (validLandmarks.length > 0) {
+            setHandCount(validLandmarks.length);
+            setDiagnostics(prev => (!prev.handsVisible ? { ...prev, handsVisible: true } : prev));
+
+            // Draw Hand Landmarks only for genuinely verified hands
+            validLandmarks.forEach((landmarks) => {
               // Draw Connections
               ctx.strokeStyle = '#1d72fe';
               ctx.lineWidth = 3;
@@ -300,8 +461,8 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
               });
             });
 
-            // Classify ISL Sign
-            const classification = classifierRef.current.classifyFrame(results.landmarks);
+            // Classify ISL Sign using filtered valid hands
+            const classification = classifierRef.current.classifyFrame(validLandmarks);
             if (classification && classification.word && classification.word !== 'NO_SIGN') {
               if (classification.isTriggerable) {
                 handleTriggerWord(classification.word, classification.confidence);
@@ -314,6 +475,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
             }
           } else {
             setHandCount(0);
+            setDiagnostics(prev => (prev.handsVisible ? { ...prev, handsVisible: false } : prev));
             classifierRef.current.classifyFrame(null);
             setGestureProgress(0);
             setIsGestureCharging(false);
@@ -321,14 +483,26 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
         }
       }
 
+      if (video && video.requestVideoFrameCallback) {
+        animFrameIdRef.current = video.requestVideoFrameCallback(renderDetection);
+      } else if (video) {
+        animFrameIdRef.current = requestAnimationFrame(renderDetection);
+      }
+    }
+
+    if (videoRef.current && videoRef.current.requestVideoFrameCallback) {
+      animFrameIdRef.current = videoRef.current.requestVideoFrameCallback(renderDetection);
+    } else {
       animFrameIdRef.current = requestAnimationFrame(renderDetection);
     }
 
-    animFrameIdRef.current = requestAnimationFrame(renderDetection);
-
     return () => {
       if (animFrameIdRef.current) {
-        cancelAnimationFrame(animFrameIdRef.current);
+        if (videoRef.current && videoRef.current.cancelVideoFrameCallback) {
+          videoRef.current.cancelVideoFrameCallback(animFrameIdRef.current);
+        } else {
+          cancelAnimationFrame(animFrameIdRef.current);
+        }
       }
     };
   }, [handleTriggerWord]);
@@ -341,7 +515,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
             <Sparkles size={14} color={isGestureCharging ? '#93c5fd' : (engineMode === 'ml' ? '#1d72fe' : '#f59e0b')} />
             <span>{isGestureCharging ? 'ACTION IN PROGRESS' : (engineMode === 'ml' ? 'ML SIGN RECOGNIZED (GRU v2)' : 'HEURISTIC SIGN RECOGNIZED')}</span>
           </div>
-          <div className="sign-hud-word">{activeSign}</div>
+          <div className="sign-hud-word">{getLabelForConcept(activeSign, demoLanguage === 'hi')}</div>
           <div className="sign-hud-confidence">
             <span>{isGestureCharging ? `Completing Gesture: ${gestureProgress}%` : `Confidence: ${confidenceScore}%`}</span>
             <div className="hud-bar-track">
@@ -375,6 +549,22 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
             <span>Loading MediaPipe AI Sign Recognizer...</span>
           </div>
         )}
+        
+        {/* Short corner warnings for lighting/hands */}
+        {!hideControls && (diagnostics.lighting === 'poor' || !diagnostics.handsVisible) && (
+          <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', flexDirection: 'column', gap: '6px', zIndex: 10 }}>
+            {diagnostics.lighting === 'poor' && (
+              <div style={{ background: 'rgba(234,67,53,0.8)', color: '#fff', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', backdropFilter: 'blur(4px)' }}>
+                <AlertCircle size={12} /> Low Light
+              </div>
+            )}
+            {!diagnostics.handsVisible && (
+              <div style={{ background: 'rgba(253,214,99,0.8)', color: '#202124', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', backdropFilter: 'blur(4px)' }}>
+                <AlertCircle size={12} /> Hands not visible
+              </div>
+            )}
+          </div>
+        )}
 
         {!hideControls && (
           <div className="deaf-video-overlay-bottom">
@@ -400,7 +590,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
               style={{ minWidth: '180px', height: '36px', borderRadius: '18px', padding: '0 16px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}
             >
               <Sparkles size={16} />
-              <span>{activeSign ? `Simulating "${activeSign}"...` : `Available Words`}</span>
+              <span>{activeSign ? `Simulating "${getLabelForConcept(activeSign, demoLanguage === 'hi')}"...` : `Available Words`}</span>
             </button>
             
             {isWordListExpanded && (
@@ -416,7 +606,7 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
                         setIsWordListExpanded(false);
                       }}
                     >
-                      {sign.label}
+                      {getLabelForConcept(sign.id, demoLanguage === 'hi')}
                     </button>
                   ))}
                 </div>
@@ -459,4 +649,6 @@ export default function DeafVideoSignRecognizer({ onSignRecognized, isCameraActi
       )}
     </div>
   );
-}
+});
+
+export default DeafVideoSignRecognizer;

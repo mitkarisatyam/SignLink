@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import DemoMode from './components/DemoMode';
 import VideoCallMode from './components/VideoCallMode';
+import PersonalizeMySigns from './components/PersonalizeMySigns';
 import './App.css';
 
 function App() {
@@ -39,6 +40,8 @@ function App() {
         setCurrentMode('call');
       } else if (mode === 'demo') {
         setCurrentMode('demo');
+      } else if (mode === 'personalize') {
+        setCurrentMode('personalize');
       } else if (mode === 'call') {
         setCurrentMode('call');
       }
@@ -56,6 +59,8 @@ function App() {
         url.searchParams.set('room', roomId);
       } else if (mode === 'demo') {
         url.searchParams.set('mode', 'demo');
+      } else if (mode === 'personalize') {
+        url.searchParams.set('mode', 'personalize');
       } else if (mode === 'call') {
         url.searchParams.set('mode', 'call');
       }
@@ -85,6 +90,12 @@ function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
       />
+    );
+  }
+
+  if (currentMode === 'personalize') {
+    return (
+      <PersonalizeMySigns onBack={handleBackToLanding} />
     );
   }
 

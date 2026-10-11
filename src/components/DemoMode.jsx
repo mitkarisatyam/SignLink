@@ -100,12 +100,19 @@ class DemoErrorBoundary extends Component {
 
 export default function DemoMode({ onBack, theme = 'dark', onToggleTheme }) {
   const [pipelineView, setPipelineView] = useState('home'); // 'home' | 'hearing-to-deaf' | 'deaf-to-hearing'
+  const [demoLanguage, setDemoLanguage] = useState('en'); // 'en' | 'hi'
+
+  const toggleLanguage = () => {
+    setDemoLanguage(prev => prev === 'en' ? 'hi' : 'en');
+  };
 
   if (pipelineView === 'hearing-to-deaf') {
     return (
       <DemoErrorBoundary onReset={() => setPipelineView('home')}>
         <DemoHearingToDeaf
           onBack={() => setPipelineView('home')}
+          demoLanguage={demoLanguage}
+          onToggleLanguage={toggleLanguage}
         />
       </DemoErrorBoundary>
     );
@@ -116,6 +123,8 @@ export default function DemoMode({ onBack, theme = 'dark', onToggleTheme }) {
       <DemoErrorBoundary onReset={() => setPipelineView('home')}>
         <DemoDeafToHearing
           onBack={() => setPipelineView('home')}
+          demoLanguage={demoLanguage}
+          onToggleLanguage={toggleLanguage}
         />
       </DemoErrorBoundary>
     );
@@ -127,6 +136,8 @@ export default function DemoMode({ onBack, theme = 'dark', onToggleTheme }) {
       onBackToLanding={onBack}
       theme={theme}
       onToggleTheme={onToggleTheme}
+      demoLanguage={demoLanguage}
+      onToggleLanguage={toggleLanguage}
     />
   );
 }

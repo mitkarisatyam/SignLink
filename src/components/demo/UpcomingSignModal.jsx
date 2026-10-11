@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Sparkles, X } from 'lucide-react';
 
-export default function UpcomingSignModal({ word, onClose }) {
+export default function UpcomingSignModal({ word, onClose, demoLanguage = 'en' }) {
   const [timeLeft, setTimeLeft] = useState(2);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -30,9 +30,17 @@ export default function UpcomingSignModal({ word, onClose }) {
       <div className="future-word-toast-content">
         <Sparkles size={16} color="#38bdf8" className="toast-icon" />
         <div className="toast-text">
-          We will add the word <strong style={{ color: '#38bdf8' }}>"{upperWord}"</strong> in the future.
+          {demoLanguage === 'hi' ? (
+            <>
+              भविष्य में हम <strong style={{ color: '#38bdf8' }}>"{upperWord}"</strong> संकेत जोड़ेंगे।
+            </>
+          ) : (
+            <>
+              We will add the word <strong style={{ color: '#38bdf8' }}>"{upperWord}"</strong> in the future.
+            </>
+          )}
         </div>
-        <button className="toast-close-btn" onClick={onClose} aria-label="Close">
+        <button className="toast-close-btn" onClick={onClose} aria-label={demoLanguage === 'hi' ? 'बंद करें' : 'Close'}>
           <X size={14} />
         </button>
       </div>

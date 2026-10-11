@@ -12,8 +12,8 @@
  * - Default: SignTemporalGRU v2 Deep Neural Network (trained on 110 dataset recordings, 151 temporal features)
  * - Fallback: Heuristic rule-based ISL recognizer (preserves tested spatial & kinematic rules)
  */
-
 import modelBundle from './sign_gru_v2_bundle.json' with { type: 'json' };
+import { DtwRecognizer, computeDTW } from './dtwRecognizer';
 
 // =============================================================================
 // ML ENGINE: SignTemporalGRU v2 Deep Neural Network
@@ -264,7 +264,7 @@ function forwardModel(scaledSeq) {
 
 export class MlSignRecognizer {
   constructor(options = {}) {
-    this.rejectionThreshold = 0.85;
+    this.rejectionThreshold = options.rejectionThreshold !== undefined ? options.rejectionThreshold : 0.85;
     this.windowSize = 22;
     this.minWindowFrames = 4;
     this.debounceMs = 1500;
@@ -275,6 +275,17 @@ export class MlSignRecognizer {
     this.lastTriggeredWord = null;
     this.lastTriggerTime = 0;
     this.debugMode = false;
+    
+    this.dtw = new DtwRecognizer();
+    this.lastScaledSequence = null;
+  }
+
+  async loadPersonalizedProfile() {
+    await this.dtw.loadProfile();
+  }
+
+  getCurrentSequence() {
+    return this.lastScaledSequence;
   }
 
   setDebugMode(enabled) {
@@ -329,7 +340,10 @@ export class MlSignRecognizer {
 
   classifyFrame(multiHandLandmarks) {
     if (!multiHandLandmarks || multiHandLandmarks.length === 0) {
-      this.frameWindow = [];
+      this.emptyFrameStreak = (this.emptyFrameStreak || 0) + 1;
+      if (this.emptyFrameStreak > 4) {
+        this.frameWindow = [];
+      }
       this.candidateFrames = Math.max(0, this.candidateFrames - 1);
       if (this.candidateFrames === 0) this.candidateWord = null;
       return {
@@ -341,6 +355,7 @@ export class MlSignRecognizer {
         isCharging: false
       };
     }
+    this.emptyFrameStreak = 0;
 
     const frameObj = this.packageFrame(multiHandLandmarks);
     this.frameWindow.push(frameObj);
@@ -383,16 +398,36 @@ export class MlSignRecognizer {
       }
       scaled.push(row);
     }
+    
+    this.lastScaledSequence = scaled;
 
-    const probs = forwardModel(scaled);
+    let predictedClass = 'NO_SIGN';
+    let topProb = 0;
+    let rule = 'NO_SIGN';
+    let isPersonalized = false;
 
-    let topIdx = 0;
-    for (let i = 1; i < probs.length; i++) {
-      if (probs[i] > probs[topIdx]) topIdx = i;
+    // First try personalized DTW
+    if (this.dtw.hasProfile()) {
+      const dtwResult = this.dtw.classify(scaled, 6.5);
+      if (dtwResult.word !== 'NO_SIGN') {
+        predictedClass = dtwResult.word;
+        topProb = dtwResult.confidence / 100.0;
+        rule = dtwResult.rule;
+        isPersonalized = true;
+      }
     }
 
-    const predictedClass = modelBundle.classNames[topIdx];
-    const topProb = probs[topIdx];
+    // Fallback to GRU if personalized didn't trigger
+    if (!isPersonalized) {
+      const probs = forwardModel(scaled);
+      let topIdx = 0;
+      for (let i = 1; i < probs.length; i++) {
+        if (probs[i] > probs[topIdx]) topIdx = i;
+      }
+      predictedClass = modelBundle.classNames[topIdx];
+      topProb = probs[topIdx];
+      rule = 'SIGN_TEMPORAL_GRU_V2';
+    }
 
     // STRICT REJECTION:
     // 1. If predicted as NO_SIGN -> reject
@@ -430,7 +465,7 @@ export class MlSignRecognizer {
       const result = {
         word: this.candidateWord,
         confidence: Math.round(topProb * 100),
-        rule: 'SIGN_TEMPORAL_GRU_V2',
+        rule: isPersonalized ? rule : 'SIGN_TEMPORAL_GRU_V2',
         progress: 100,
         isTriggerable: isCooldownOver,
         isCharging: false,
@@ -469,6 +504,19 @@ export class IslSignRecognizer {
   constructor(options = {}) {
     this.mode = 'ml'; // Only ML mode supported now
     this.mlRecognizer = new MlSignRecognizer(options);
+    
+    // Auto-load personalized profile if available
+    this.mlRecognizer.loadPersonalizedProfile().catch(err => {
+      console.warn('[IslSignRecognizer] Could not load personalized profile:', err);
+    });
+  }
+
+  async reloadPersonalizedProfile() {
+    await this.mlRecognizer.loadPersonalizedProfile();
+  }
+
+  getCurrentSequence() {
+    return this.mlRecognizer.getCurrentSequence();
   }
 
   setEngine(mode) {
@@ -492,6 +540,108 @@ export class IslSignRecognizer {
   classifyFrame(multiHandLandmarks) {
     return this.mlRecognizer.classifyFrame(multiHandLandmarks);
   }
+
+  validateCandidateSign(seq, targetSign, profile = {}) {
+    return validateCandidateSign(seq, targetSign, profile);
+  }
 }
+
+/**
+ * Analyzes a 20-frame scaled sequence with the base SignTemporalGRU v2 model.
+ */
+export function analyzeSequence(scaledSeq) {
+  if (!scaledSeq || scaledSeq.length !== 20) {
+    return null;
+  }
+  const probs = forwardModel(scaledSeq);
+  const predictions = modelBundle.classNames.map((name, idx) => ({
+    name,
+    prob: probs[idx],
+    confidence: Math.round(probs[idx] * 100)
+  })).sort((a, b) => b.prob - a.prob);
+
+  return {
+    topMatch: predictions[0],
+    runnerUp: predictions[1],
+    allPredictions: predictions
+  };
+}
+
+/**
+ * Validates whether a candidate sign sequence genuinely corresponds to the target sign
+ * or if it is a mistaken or intentionally false attempt of a different sign.
+ */
+export function validateCandidateSign(scaledSeq, targetSign, userProfile = {}) {
+  if (!scaledSeq || scaledSeq.length !== 20) {
+    return {
+      isValid: false,
+      reason: 'INVALID_SEQUENCE',
+      message: 'Failed to capture a valid 20-frame sign sequence.'
+    };
+  }
+
+  // 1. Analyze with base GRU v2 neural network
+  const analysis = analyzeSequence(scaledSeq);
+  if (!analysis) {
+    return { isValid: false, reason: 'ANALYSIS_FAILED', message: 'Could not analyze sequence.' };
+  }
+
+  const topMatch = analysis.topMatch;
+  const targetPred = analysis.allPredictions.find(p => p.name === targetSign);
+  const targetConf = targetPred ? targetPred.confidence : 0;
+
+  // 2. Detect if another distinct sign dominates
+  if (topMatch && topMatch.name !== 'NO_SIGN' && topMatch.name !== targetSign) {
+    // If another sign clearly matches with confidence >= 35% and outscores target sign
+    if (topMatch.confidence >= 35 && topMatch.confidence > targetConf + 15) {
+      return {
+        isValid: false,
+        reason: 'MISMATCHED_SIGN',
+        detectedSign: topMatch.name,
+        confidence: topMatch.confidence,
+        targetConfidence: targetConf,
+        message: `Mismatched sign detected! Our AI analyzed your gesture as "${topMatch.name}" (${topMatch.confidence}% match) instead of "${targetSign}". This slot only accepts the correct sign for "${targetSign}".`
+      };
+    }
+  }
+
+  // 3. Cross-validate against other signs previously calibrated in user's profile
+  if (userProfile && typeof userProfile === 'object') {
+    let closestOtherSign = null;
+    let closestOtherDist = Infinity;
+
+    for (const [signId, examples] of Object.entries(userProfile)) {
+      if (signId === targetSign || !Array.isArray(examples)) continue;
+
+      for (const tmpl of examples) {
+        if (!tmpl || tmpl.length !== 20) continue;
+        const dist = computeDTW(scaledSeq, tmpl);
+        if (dist < closestOtherDist) {
+          closestOtherDist = dist;
+          closestOtherSign = signId;
+        }
+      }
+    }
+
+    // A DTW distance < 3.2 indicates an almost identical gesture to another trained sign
+    if (closestOtherSign && closestOtherDist < 3.2) {
+      return {
+        isValid: false,
+        reason: 'CROSS_SIGN_DUPLICATE',
+        detectedSign: closestOtherSign,
+        distance: closestOtherDist.toFixed(1),
+        message: `Duplicate conflict detected! This gesture is virtually identical to your existing profile for "${closestOtherSign}". Each sign must have its distinct movement.`
+      };
+    }
+  }
+
+  return {
+    isValid: true,
+    topMatch: topMatch ? topMatch.name : targetSign,
+    confidence: topMatch ? topMatch.confidence : targetConf,
+    targetConfidence: targetConf
+  };
+}
+
 
 

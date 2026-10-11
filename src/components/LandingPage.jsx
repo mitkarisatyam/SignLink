@@ -56,6 +56,7 @@ export default function LandingPage({ onSelectMode, theme = 'dark', onToggleThem
           <button onClick={onToggleTheme} className="nav-btn ghost">
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
+          <button className="nav-btn ghost" onClick={() => onSelectMode('personalize')}>Personalize My Signs</button>
           <button className="nav-btn ghost" onClick={() => onSelectMode('demo')}>Demo</button>
           <button className="nav-btn primary" onClick={() => onSelectMode('call')}>Video Call</button>
         </div>
