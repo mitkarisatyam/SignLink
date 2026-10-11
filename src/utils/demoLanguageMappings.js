@@ -3,6 +3,7 @@ export const DEMO_VOCABULARY = {
     id: 'COME',
     en: 'Come',
     hi: 'आओ',
+    hiPhonetic: 'Aao',
     enVariants: ['come here', 'come', 'coming', 'came', 'approach'],
     hiVariants: ['आ जाइए', 'आ जाओ', 'आइये', 'आइए', 'आओ', 'आना', 'aao', 'aaiye', 'aana', 'come here', 'come']
   },
@@ -10,6 +11,7 @@ export const DEMO_VOCABULARY = {
     id: 'HOME',
     en: 'Home',
     hi: 'घर',
+    hiPhonetic: 'Ghar',
     enVariants: ['home', 'house', 'household'],
     hiVariants: ['अपना घर', 'घर', 'मकान', 'गृह', 'ghar', 'makan', 'makaan', 'home', 'house']
   },
@@ -17,6 +19,7 @@ export const DEMO_VOCABULARY = {
     id: 'PLEASE',
     en: 'Please',
     hi: 'कृपया',
+    hiPhonetic: 'Kripya',
     enVariants: ['please', 'kindly', 'plz', 'pls'],
     hiVariants: ['कृपया', 'कृप्या', 'प्लीज़', 'प्लीज', 'kripya', 'kripaya', 'please', 'plz', 'pls']
   },
@@ -24,6 +27,7 @@ export const DEMO_VOCABULARY = {
     id: 'WORK',
     en: 'Work',
     hi: 'काम',
+    hiPhonetic: 'Kaam',
     enVariants: ['work', 'job', 'task', 'working'],
     hiVariants: ['काम', 'कार्य', 'नौकरी', 'kaam', 'karya', 'work', 'job']
   },
@@ -31,6 +35,7 @@ export const DEMO_VOCABULARY = {
     id: 'GO',
     en: 'Go',
     hi: 'जाओ',
+    hiPhonetic: 'Jaao',
     enVariants: ['go away', 'go', 'going', 'gone', 'leave'],
     hiVariants: ['जाओ', 'जाइये', 'जाएं', 'जा', 'जाना', 'jaao', 'jao', 'jaaiye', 'jaana', 'go away', 'go']
   },
@@ -38,6 +43,7 @@ export const DEMO_VOCABULARY = {
     id: 'WHERE',
     en: 'Where',
     hi: 'कहाँ',
+    hiPhonetic: 'Kahaan',
     enVariants: ['where is it', 'where are you', 'which place', 'where'],
     hiVariants: ['किस जगह', 'कहाँ', 'कहा', 'किधर', 'kahan', 'kaha', 'kidhar', 'where']
   },
@@ -45,6 +51,7 @@ export const DEMO_VOCABULARY = {
     id: 'DEAF',
     en: 'Deaf',
     hi: 'बधिर',
+    hiPhonetic: 'Badhir',
     enVariants: ['hard of hearing', 'hearing impaired', 'deaf'],
     hiVariants: ['सुनने में असमर्थ', 'बधिर', 'बहरा', 'बहरे', 'badhir', 'behra', 'deaf']
   },
@@ -52,6 +59,7 @@ export const DEMO_VOCABULARY = {
     id: 'LIKE',
     en: 'Like',
     hi: 'पसंद',
+    hiPhonetic: 'Pasand',
     enVariants: ['like', 'love', 'likes', 'liking'],
     hiVariants: ['पसंद करना', 'अच्छा लगना', 'पसंद है', 'पसंद', 'pasand', 'pasand hai', 'like', 'love']
   },
@@ -59,6 +67,7 @@ export const DEMO_VOCABULARY = {
     id: 'NEVER',
     en: 'Never',
     hi: 'कभी नहीं',
+    hiPhonetic: 'Kabhi nahi',
     enVariants: ['not ever', 'not at all', 'never'],
     hiVariants: ['कभी नहीं', 'कभी नही', 'कदापि नहीं', 'kabhi nahi', 'kabhi nhi', 'never']
   },
@@ -66,6 +75,7 @@ export const DEMO_VOCABULARY = {
     id: 'PERFECT',
     en: 'Perfect',
     hi: 'बिल्कुल सही',
+    hiPhonetic: 'Bilkul sahi',
     enVariants: ['perfect', 'exactly', 'excellent', 'awesome', 'great'],
     hiVariants: ['बिल्कुल सही', 'एकदम सही', 'परफेक्ट', 'शानदार', 'बढ़िया', 'shandaar', 'badhiya', 'perfect']
   },
@@ -73,6 +83,7 @@ export const DEMO_VOCABULARY = {
     id: 'HE',
     en: 'He',
     hi: 'वह',
+    hiPhonetic: 'Vah',
     enVariants: ['he is', 'he', 'him', 'his'],
     hiVariants: ['उसने', 'उसका', 'वह', 'वो', 'usne', 'woh', 'wo', 'he', 'him']
   }
@@ -175,19 +186,187 @@ export function formatConceptSequence(conceptIds, isHindi, separator = ' • ') 
   return conceptIds.map(id => getLabelForConcept(id, isHindi)).join(separator);
 }
 
-/**
- * Maps any label (Hindi, English, or variant) back to its canonical concept ID.
- */
+export function getPhoneticForConcept(conceptId) {
+  const concept = DEMO_VOCABULARY[conceptId];
+  if (!concept) return conceptId;
+  return concept.hiPhonetic || concept.hi || concept.en;
+}
+
+export function findBestTtsVoice(voices, isHindi) {
+  if (!voices || voices.length === 0) return null;
+
+  if (isHindi) {
+    // 1. Genuine Hindi voice (hi-IN, Google हिन्दी, Microsoft Hemant, Microsoft Kalpana)
+    const hiVoice = voices.find(v => 
+      (v.lang && (v.lang.toLowerCase().startsWith('hi') || v.lang.toLowerCase().replace('_', '-').includes('hi-in'))) ||
+      (v.name && (v.name.toLowerCase().includes('hindi') || v.name.includes('हिन्दी') || v.name.toLowerCase().includes('kalpana') || v.name.toLowerCase().includes('hemant')))
+    );
+    if (hiVoice) return { voice: hiVoice, isNativeHindi: true };
+
+    // 2. Indian English voice (which pronounces phonetic Hindi words like Kaam, Ghar naturally)
+    const inVoice = voices.find(v => 
+      (v.lang && v.lang.toLowerCase().includes('en-in')) ||
+      (v.name && (v.name.toLowerCase().includes('india') || v.name.toLowerCase().includes('heera') || v.name.toLowerCase().includes('neerja')))
+    );
+    if (inVoice) return { voice: inVoice, isNativeHindi: false };
+
+    // 3. Fallback to any natural English/system voice
+    const engVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Neural') || v.name.includes('Online'))) ||
+                     voices.find(v => v.lang.startsWith('en')) ||
+                     voices[0];
+    return { voice: engVoice, isNativeHindi: false };
+  } else {
+    // English
+    const engVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Neural') || v.name.includes('US'))) ||
+                     voices.find(v => v.lang.startsWith('en')) ||
+                     voices[0];
+    return { voice: engVoice, isNativeHindi: false };
+  }
+}
+
 export function getConceptIdFromLabel(label) {
   if (!label) return null;
-  const clean = String(label).trim().toLowerCase();
-  
+  const rawStr = label.toString().trim();
+  const upper = rawStr.toUpperCase();
+  if (DEMO_VOCABULARY[upper]) return upper;
+
+  const lower = rawStr.toLowerCase();
   for (const [id, data] of Object.entries(DEMO_VOCABULARY)) {
-    if (id.toLowerCase() === clean) return id;
-    if (data.en.toLowerCase() === clean) return id;
-    if (data.hi === label.trim()) return id;
-    if (data.hiVariants.some(v => v.toLowerCase() === clean)) return id;
-    if (data.enVariants.some(v => v.toLowerCase() === clean)) return id;
+    if (id.toLowerCase() === lower) return id;
+    if (data.en && data.en.toLowerCase() === lower) return id;
+    if (data.hi && data.hi.trim() === rawStr) return id;
+    if (data.hiPhonetic && data.hiPhonetic.toLowerCase() === lower) return id;
+    if (data.enVariants && data.enVariants.some(v => v.toLowerCase() === lower)) return id;
+    if (data.hiVariants && data.hiVariants.some(v => v.toLowerCase() === lower || v.trim() === rawStr)) return id;
   }
   return null;
 }
+
+const COMMON_DEVANAGARI_FALLBACKS = {
+  'काम': 'Kaam',
+  'कार्य': 'Karya',
+  'घर': 'Ghar',
+  'मकान': 'Makaan',
+  'कृपया': 'Kripya',
+  'कृप्या': 'Kripya',
+  'आओ': 'Aao',
+  'आइए': 'Aaiye',
+  'आना': 'Aana',
+  'जाओ': 'Jaao',
+  'जाना': 'Jaana',
+  'कहाँ': 'Kahaan',
+  'किधर': 'Kidhar',
+  'बधिर': 'Badhir',
+  'पसंद': 'Pasand',
+  'कभी नहीं': 'Kabhi nahi',
+  'बिल्कुल सही': 'Bilkul sahi',
+  'शानदार': 'Shandaar',
+  'वह': 'Vah',
+  'वो': 'Voh',
+  'नमस्ते': 'Namaste',
+  'धन्यवाद': 'Dhanyavaad',
+  'मदद': 'Madad'
+};
+
+export function devanagariToPhonetic(text) {
+  if (!text) return '';
+  const trimmed = text.toString().trim();
+  if (COMMON_DEVANAGARI_FALLBACKS[trimmed]) return COMMON_DEVANAGARI_FALLBACKS[trimmed];
+
+  // If text contains Devanagari characters (U+0900 to U+097F)
+  const hasDevanagari = /[\u0900-\u097F]/.test(trimmed);
+  if (!hasDevanagari) return trimmed;
+
+  // Check word-by-word in fallback dictionary
+  const words = trimmed.split(/\s+/);
+  const converted = words.map(w => COMMON_DEVANAGARI_FALLBACKS[w] || w);
+  return converted.join(' ');
+}
+
+export function speakConceptText(conceptIdOrText, isHindi, options = {}) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+  // Cancel any prior utterance & unpause stuck Chrome audio
+  try {
+    window.speechSynthesis.cancel();
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+  } catch (e) {}
+
+  const voices = window.speechSynthesis.getVoices();
+  const voiceMatch = findBestTtsVoice(voices, isHindi);
+  const voice = voiceMatch?.voice || null;
+  const isNativeHindi = Boolean(voiceMatch?.isNativeHindi);
+
+  let textToSpeak = '';
+  // Try resolving concept from ID, label, or Hindi text
+  const conceptId = getConceptIdFromLabel(conceptIdOrText) || 
+                    (typeof conceptIdOrText === 'string' && DEMO_VOCABULARY[conceptIdOrText.toUpperCase()] ? conceptIdOrText.toUpperCase() : null);
+  const concept = conceptId ? DEMO_VOCABULARY[conceptId] : null;
+
+  if (concept) {
+    if (isHindi) {
+      // If native Hindi voice is present, speak Devanagari (e.g. 'काम')
+      // If NO native Hindi voice is present (typical on Windows/Chrome), speak the clear phonetic Romanized transcription ('Kaam', 'Ghar', 'Aao') so speech is NEVER silent!
+      textToSpeak = isNativeHindi ? concept.hi : (concept.hiPhonetic || concept.en);
+    } else {
+      textToSpeak = concept.en;
+    }
+  } else {
+    // If arbitrary string passed:
+    if (isHindi && !isNativeHindi) {
+      textToSpeak = devanagariToPhonetic(conceptIdOrText);
+    } else {
+      textToSpeak = conceptIdOrText;
+    }
+  }
+
+  if (!textToSpeak) return;
+
+  const utterance = new SpeechSynthesisUtterance(textToSpeak);
+  
+  if (isNativeHindi) {
+    utterance.lang = 'hi-IN';
+    utterance.rate = 0.95;
+  } else if (isHindi) {
+    // Speaking phonetic Hindi via Indian English / system fallback voice
+    utterance.lang = voice?.lang || 'en-IN';
+    utterance.rate = 0.88; // Slightly measured rate for clear phonetic delivery
+  } else {
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
+  }
+
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+  if (voice) {
+    utterance.voice = voice;
+  }
+
+  // Chrome watchdog to prevent audio engine freezing mid-speech
+  const resumeWatchdog = setInterval(() => {
+    if (!window.speechSynthesis.speaking) {
+      clearInterval(resumeWatchdog);
+    } else {
+      window.speechSynthesis.resume();
+    }
+  }, 1000);
+
+  utterance.onend = () => {
+    clearInterval(resumeWatchdog);
+    if (options.onEnd) options.onEnd();
+  };
+  utterance.onerror = (err) => {
+    clearInterval(resumeWatchdog);
+    console.warn('[TTS] Synthesis error:', err);
+    if (options.onError) options.onError(err);
+  };
+
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.error('[TTS] speak failed:', err);
+  }
+}
+

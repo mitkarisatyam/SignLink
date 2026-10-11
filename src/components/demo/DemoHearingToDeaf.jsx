@@ -215,7 +215,8 @@ export default function DemoHearingToDeaf({ onBack, demoLanguage = 'en', onToggl
 
     setSpeechSupported(true);
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    // continuous: false prevents Google cloud socket drop on deployed HTTPS (Vercel)
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.maxAlternatives = 5;
     recognition.lang = demoLanguage === 'hi' ? 'hi-IN' : (navigator.language || 'en-US');

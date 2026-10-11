@@ -33,7 +33,7 @@ import SharedBoard from './SharedBoard';
 import ConnectionQualityMonitor from './ConnectionQualityMonitor';
 import PreCallDeviceCheck from './PreCallDeviceCheck';
 import { extractSpeechSignsAndUnmatched, matchAllSignsFromSpeech } from '../utils/speechDictionary';
-import { matchSpeechToConceptSequence, getLabelForConcept, formatConceptSequence, getConceptIdFromLabel } from '../utils/demoLanguageMappings';
+import { matchSpeechToConceptSequence, getLabelForConcept, formatConceptSequence, getConceptIdFromLabel, speakConceptText } from '../utils/demoLanguageMappings';
 import UpcomingSignModal from './demo/UpcomingSignModal';
 import { SignalingService } from '../utils/signalingService';
 import './VideoCallMode.css';
@@ -178,33 +178,13 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
 
   const [signSafeMode, setSignSafeMode] = useState(false); // Accidental gesture suppression (rejectionThreshold 0.90)
 
-  // Rapid language switch handler: immediately cancel ongoing TTS and re-announce active sign in new language
+  // Rapid language switch handler: immediately re-announce active sign in new language
   const prevCallLangRef = useRef(callLanguage);
   useEffect(() => {
     if (prevCallLangRef.current !== callLanguage) {
       prevCallLangRef.current = callLanguage;
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
       if (remoteSignText && userRoleRef.current === 'hearing') {
-        const isHindi = callLanguage === 'hi';
-        const localizedText = getLabelForConcept(remoteSignText, isHindi);
-        if (localizedText && window.speechSynthesis) {
-          const utterance = new SpeechSynthesisUtterance(localizedText);
-          utterance.lang = isHindi ? 'hi-IN' : 'en-US';
-          utterance.rate = 0.95;
-          const voices = window.speechSynthesis.getVoices();
-          let voice = null;
-          if (isHindi) {
-            voice = voices.find((v) => v.lang.startsWith('hi') || (v.lang.includes('IN') && v.name.toLowerCase().includes('hindi'))) ||
-                    voices.find((v) => v.lang.startsWith('hi'));
-          } else {
-            voice = voices.find((v) => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('US'))) ||
-                    voices.find((v) => v.lang.startsWith('en'));
-          }
-          if (voice) utterance.voice = voice;
-          window.speechSynthesis.speak(utterance);
-        }
+        speakConceptText(remoteSignText, callLanguage === 'hi');
       }
     }
   }, [callLanguage, remoteSignText]);
@@ -448,15 +428,25 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       lastResultIndexRef.current = -1;
       lastMatchesRef.current = [];
 
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      try {
+        recognition = new SpeechRecognition();
+      } catch (e) {
+        console.error('[SPEECH] Instance creation error:', e);
+        return;
+      }
+
+      // CRITICAL FOR DEPLOYED HOSTS (Vercel):
+      // continuous: false prevents Google cloud speech recognition socket drops / timeouts.
+      // onend restarts it immediately (200ms) for an uninterrupted live dictation loop.
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 5;
       recognition.lang = callLanguage === 'hi' ? 'hi-IN' : 'en-US';
 
       recognition.onstart = () => {
-        setSpeechStatus(callLanguage === 'hi' ? '🎙️ सुन रहे हैं (माइक सक्रिय - हिंदी)' : '🎙️ Listening (Mic Active - English)');
-        retryDelay = 250;
+        if (!isMountedRef.current) return;
+        setSpeechStatus(callLanguage === 'hi' ? '🎙️ सुन रहे हैं (हिंदी)' : '🎙️ Listening (English)');
+        retryDelay = 200;
       };
 
       recognition.onresult = (event) => {
@@ -539,22 +529,42 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       };
 
       recognition.onerror = (event) => {
-        if (event.error !== 'no-speech') {
-          console.warn('[SPEECH] Recognition error:', event.error);
-          setSpeechStatus(`Error: ${event.error}`);
-          if (['not-allowed', 'audio-capture'].includes(event.error)) {
-            hasFatalError = true;
-          }
-          if (event.error === 'network') {
-            retryDelay = Math.min(retryDelay * 2, 5000);
-          }
+        if (!isMountedRef.current) return;
+        const err = event.error;
+        console.warn('[SPEECH] Recognition error:', err);
+
+        if (err === 'no-speech' || err === 'aborted') {
+          // Normal silence or browser utterance cutoff; continue listening smoothly
+          return;
         }
+
+        if (err === 'network') {
+          // Cloud endpoint stream reset on Vercel: silently re-arm with low latency
+          setSpeechStatus(callLanguage === 'hi' ? '🎙️ पुनः कनेक्ट हो रहा है...' : '🎙️ Reconnecting speech...');
+          retryDelay = 200;
+          return;
+        }
+
+        if (err === 'not-allowed' || err === 'service-not-allowed') {
+          hasFatalError = true;
+          setSpeechStatus('⚠️ Microphone access blocked. Please allow mic in browser address bar.');
+          return;
+        }
+
+        if (err === 'audio-capture') {
+          hasFatalError = true;
+          setSpeechStatus('⚠️ No microphone hardware found.');
+          return;
+        }
+
+        // Other non-fatal errors
+        setSpeechStatus(callLanguage === 'hi' ? '🎙️ सुन रहे हैं (हिंदी)' : '🎙️ Listening (English)');
       };
 
       recognition.onend = () => {
         if (hasFatalError || !isMountedRef.current) return;
         
-        // Destroy old instance and create a new one to prevent Chrome zombie state
+        // Cleanly cycle to next utterance without hitting Google socket timeout
         setTimeout(() => {
           startRecognition();
         }, retryDelay);
@@ -563,7 +573,12 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
       try {
         recognition.start();
       } catch (e) {
-        console.error('[SPEECH] Failed to start:', e);
+        // Handle immediate browser state race
+        setTimeout(() => {
+          if (isMountedRef.current && !hasFatalError) {
+            startRecognition();
+          }
+        }, 300);
       }
     };
 
@@ -637,30 +652,8 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
           const conceptId = getConceptIdFromLabel(rawSign) || (rawSign ? rawSign.toUpperCase() : '');
           setRemoteSignText(conceptId);
           
-          if (userRoleRef.current === 'hearing' && window.speechSynthesis && conceptId) {
-            window.speechSynthesis.cancel();
-            window.speechSynthesis.resume(); // Ensure TTS engine is not stuck
-            
-            const isHindi = callLanguageRef.current === 'hi';
-            const textToSpeak = getLabelForConcept(conceptId, isHindi) || rawSign;
-            const utterance = new SpeechSynthesisUtterance(textToSpeak);
-            utterance.lang = isHindi ? 'hi-IN' : 'en-US';
-            utterance.rate = 0.95;
-            utterance.pitch = 1.0;
-            
-            // Localized natural voice selection
-            const voices = window.speechSynthesis.getVoices();
-            let voice = null;
-            if (isHindi) {
-              voice = voices.find((v) => v.lang.startsWith('hi') || (v.lang.includes('IN') && v.name.toLowerCase().includes('hindi'))) ||
-                      voices.find((v) => v.lang.startsWith('hi'));
-            } else {
-              voice = voices.find((v) => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('US'))) ||
-                      voices.find((v) => v.lang.startsWith('en'));
-            }
-            if (voice) utterance.voice = voice;
-
-            window.speechSynthesis.speak(utterance);
+          if (userRoleRef.current === 'hearing' && conceptId) {
+            speakConceptText(conceptId, callLanguageRef.current === 'hi');
           }
         } else if (payload.type === 'speech') {
           const signs = Array.isArray(payload.text) ? payload.text : [payload.text];
@@ -1762,7 +1755,7 @@ export default function VideoCallMode({ initialRoomId = '', onBack, theme = 'dar
                     isVisible={showSignText}
                   >
                     <div style={{ padding: '12px 16px', fontSize: '15px', color: '#a78bfa', textAlign: 'center', background: 'rgba(0,0,0,0.5)', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                      <span style={{ fontSize: '11px', color: speechStatus.includes('Error') ? '#ef4444' : '#94a3b8', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '11px', color: speechStatus.includes('⚠️') || speechStatus.includes('Error') ? '#f59e0b' : '#94a3b8', marginBottom: '4px' }}>
                         {speechStatus}
                       </span>
                       <div style={{ wordBreak: 'break-word', textAlign: 'center', width: '100%' }}>

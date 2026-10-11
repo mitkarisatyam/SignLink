@@ -23,7 +23,7 @@ const HAND_CONNECTIONS = [
   [0, 17]                                  // Palm base
 ];
 
-import { getLabelForConcept } from '../utils/demoLanguageMappings';
+import { getLabelForConcept, speakConceptText } from '../utils/demoLanguageMappings';
 
 /**
  * Anatomical validator: strictly filters out false-positive hand detections
@@ -157,30 +157,7 @@ const DeafVideoSignRecognizer = forwardRef(({ onSignRecognized, isCameraActive, 
   // Text-to-Speech synthesis
   const speakWord = useCallback((word) => {
     if (!ttsEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
-
-    window.speechSynthesis.cancel();
-    const isHindi = demoLanguage === 'hi';
-    const textToSpeak = getLabelForConcept(word, isHindi);
-    if (!textToSpeak) return;
-
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.lang = isHindi ? 'hi-IN' : 'en-US';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-
-    const voices = window.speechSynthesis.getVoices();
-    let voice = null;
-    if (isHindi) {
-      voice = voices.find((v) => v.lang.startsWith('hi') || (v.lang.includes('IN') && v.name.toLowerCase().includes('hindi'))) ||
-              voices.find((v) => v.lang.startsWith('hi'));
-    } else {
-      voice = voices.find((v) => v.lang.startsWith('en') && !v.name.includes('Google') && v.name.includes('Natural')) ||
-              voices.find((v) => v.lang.startsWith('en'));
-    }
-    if (voice) utterance.voice = voice;
-
-    window.speechSynthesis.speak(utterance);
+    speakConceptText(word, demoLanguage === 'hi');
   }, [ttsEnabled, demoLanguage]);
 
   const lastTriggeredWordRef = useRef(null);

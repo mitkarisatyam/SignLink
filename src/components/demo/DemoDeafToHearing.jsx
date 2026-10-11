@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import './DemoMode.css';
 
-import { getLabelForConcept, getConceptIdFromLabel, DEMO_VOCABULARY } from '../../utils/demoLanguageMappings';
+import { getLabelForConcept, getConceptIdFromLabel, DEMO_VOCABULARY, speakConceptText } from '../../utils/demoLanguageMappings';
 
 export default function DemoDeafToHearing({ onBack, demoLanguage = 'en', onToggleLanguage }) {
   const [hasCompletedSignSafe, setHasCompletedSignSafe] = useState(false);
@@ -54,33 +54,11 @@ export default function DemoDeafToHearing({ onBack, demoLanguage = 'en', onToggl
 
   const speakWord = useCallback((conceptId, targetLang = demoLanguage) => {
     if (!ttsEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    
-    const isHindi = targetLang === 'hi';
-    const textToSpeak = getLabelForConcept(conceptId, isHindi);
-    if (!textToSpeak) return;
-    
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.lang = isHindi ? 'hi-IN' : 'en-US';
-    
-    const voices = window.speechSynthesis.getVoices();
-    let voice = null;
-    if (isHindi) {
-      voice = voices.find(v => v.lang.startsWith('hi') || (v.lang.includes('IN') && v.name.toLowerCase().includes('hindi'))) ||
-              voices.find(v => v.lang.startsWith('hi'));
-    } else {
-      voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('US'))) ||
-              voices.find(v => v.lang.startsWith('en'));
-    }
-    if (voice) {
-      utterance.voice = voice;
-    }
-    
     setIsSpeakingTts(true);
-    utterance.onend = () => setIsSpeakingTts(false);
-    utterance.onerror = () => setIsSpeakingTts(false);
-    
-    window.speechSynthesis.speak(utterance);
+    speakConceptText(conceptId, targetLang === 'hi', {
+      onEnd: () => setIsSpeakingTts(false),
+      onError: () => setIsSpeakingTts(false)
+    });
   }, [ttsEnabled, demoLanguage]);
 
   // When user switches language (even rapidly), immediately cut off prior speech and announce in the new language
